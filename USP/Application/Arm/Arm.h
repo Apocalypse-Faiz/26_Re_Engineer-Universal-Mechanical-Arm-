@@ -1,9 +1,10 @@
 #ifndef __ROBOT_ARM_H__
 #define __ROBOT_ARM_H__
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "Math3D.h"
+#include "Middlewares/Algorithm/Trajectory/cqc.h"
 
 class Joint;
 
@@ -13,12 +14,12 @@ class Joint;
 struct ArmWaypoint
 {
     float q[Math3D::kDoF];
-    uint32_t duration_ms;
+    std::uint32_t duration_ms;
 };
 
 /**
  * @brief 6轴机械臂顶层控制器。
- * @note 不使用动态内存，所有缓存均为固定大小数组。
+ * @note 轨迹插值基于 SRML CQC 算法；内部 TrajectoryPointArray 使用 vector 作为点缓存。
  */
 class Arm
 {
@@ -95,7 +96,7 @@ public:
     /**
      * @brief 追加一个路径点。
      */
-    bool addWaypoint(const float q_target[kNumJoints], uint32_t duration_ms);
+    bool addWaypoint(const float q_target[kNumJoints], std::uint32_t duration_ms);
 
     /**
      * @brief 以当前关节角作为起点启动路径执行。
@@ -113,12 +114,24 @@ public:
     bool waypointsRunning() const;
 
     /**
-     * @brief 由外部 1kHz 任务周期调用。
-     * @param dt_ms 本周期时间增量（ms）。
+         * @brief 由外部周期调用，内部直接使用 HAL_GetTick() 作为时基。
      */
-    void update(uint32_t dt_ms);
+        void update();
 
 private:
+    static const uint16_t kTrajectoryPointCapacity = kMaxWaypoints;
+    static const uint16_t kCqcCapacity = static_cast<uint16_t>(kMaxWaypoints + 1);
+
+    struct JointTrajectoryChannel
+    {
+        TrajectoryPointArray points;
+        CQC_<kCqcCapacity> planner;
+
+        JointTrajectoryChannel() : points(kTrajectoryPointCapacity)
+        {
+        }
+    };
+
     Joint *joints_[kNumJoints];
 
     Math3D::Mat4 M_;
@@ -127,13 +140,11 @@ private:
     ArmWaypoint waypoints_[kMaxWaypoints];
     uint8_t waypoint_count_;
 
-    bool running_;
-    uint8_t segment_index_;
-    uint32_t local_t_ms_;
+    JointTrajectoryChannel traj_[kNumJoints];
 
-    float segment_q_start_[kNumJoints];
-    float segment_q_end_[kNumJoints];
-    uint32_t segment_duration_ms_;
+    bool running_;
+    std::uint32_t trajectory_start_tick_ms_;
+    std::uint32_t trajectory_total_ms_;
 
     /**
      * @brief 采集当前关节角。
@@ -141,14 +152,9 @@ private:
     void captureCurrentJointPosition(float q_out[kNumJoints]) const;
 
     /**
-     * @brief 准备当前段插值起终点。
+     * @brief 按动作组构建每个关节的 CQC 轨迹规划器。
      */
-    void prepareSegment(uint8_t index, const float start_q[kNumJoints]);
-
-    /**
-     * @brief Quintic 插值核：10u^3-15u^4+6u^5。
-     */
-    static float quinticBlend(float u);
+    bool buildJointTrajectories(const float q_start[kNumJoints]);
 };
 
 #endif

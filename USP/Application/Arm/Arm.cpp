@@ -1,35 +1,17 @@
 #include "Arm.h"
 
+#include "main.h"
 #include "../Joint/Joint.h"
-
-namespace
-{
-inline float clamp01(float x)
-{
-    if (x < 0.0f)
-    {
-        return 0.0f;
-    }
-    if (x > 1.0f)
-    {
-        return 1.0f;
-    }
-    return x;
-}
-}
 
 Arm::Arm()
     : waypoint_count_(0),
       running_(false),
-      segment_index_(0),
-      local_t_ms_(0),
-      segment_duration_ms_(0)
+    trajectory_start_tick_ms_(0),
+      trajectory_total_ms_(0)
 {
     for (uint8_t i = 0; i < kNumJoints; ++i)
     {
         joints_[i] = nullptr;
-        segment_q_start_[i] = 0.0f;
-        segment_q_end_[i] = 0.0f;
     }
 
     M_ = Math3D::eye4();
@@ -134,12 +116,17 @@ void Arm::clearWaypoints()
 {
     waypoint_count_ = 0;
     running_ = false;
-    segment_index_ = 0;
-    local_t_ms_ = 0;
-    segment_duration_ms_ = 0;
+    trajectory_start_tick_ms_ = 0;
+    trajectory_total_ms_ = 0;
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        traj_[i].planner.reset();
+        traj_[i].points.clear();
+    }
 }
 
-bool Arm::addWaypoint(const float q_target[kNumJoints], uint32_t duration_ms)
+bool Arm::addWaypoint(const float q_target[kNumJoints], std::uint32_t duration_ms)
 {
     if (waypoint_count_ >= kMaxWaypoints)
     {
@@ -166,11 +153,27 @@ bool Arm::startWaypointsFromCurrent()
 
     float q_start[kNumJoints] = {};
     captureCurrentJointPosition(q_start);
-    prepareSegment(0, q_start);
+
+    trajectory_start_tick_ms_ = HAL_GetTick();
+    trajectory_total_ms_ = 0;
+    for (uint8_t i = 0; i < waypoint_count_; ++i)
+    {
+        trajectory_total_ms_ += waypoints_[i].duration_ms;
+    }
+
+    if (!buildJointTrajectories(q_start))
+    {
+        return false;
+    }
+
+    if (trajectory_total_ms_ == 0)
+    {
+        setJointTarget(waypoints_[waypoint_count_ - 1].q);
+        running_ = false;
+        return true;
+    }
 
     running_ = true;
-    segment_index_ = 0;
-    local_t_ms_ = 0;
     return true;
 }
 
@@ -184,63 +187,38 @@ bool Arm::waypointsRunning() const
     return running_;
 }
 
-void Arm::update(uint32_t dt_ms)
+void Arm::update()
 {
     if (!running_)
     {
         return;
     }
 
-    // 时长为 0 时直接跳段，兼容“立即到位”的路径点。
-    if (segment_duration_ms_ == 0)
-    {
-        setJointTarget(segment_q_end_);
+    const std::uint32_t now_tick_ms = HAL_GetTick();
+    const std::uint32_t elapsed_ms = now_tick_ms - trajectory_start_tick_ms_;
 
-        const uint8_t next_index = static_cast<uint8_t>(segment_index_ + 1);
-        if (next_index >= waypoint_count_)
-        {
-            running_ = false;
-            return;
-        }
+    const std::uint32_t sample_tick_ms = (elapsed_ms > trajectory_total_ms_)
+                                             ? (trajectory_start_tick_ms_ + trajectory_total_ms_)
+                                             : now_tick_ms;
 
-        prepareSegment(next_index, segment_q_end_);
-        segment_index_ = next_index;
-        local_t_ms_ = 0;
-        return;
-    }
-
-    if (local_t_ms_ < segment_duration_ms_)
-    {
-        local_t_ms_ += dt_ms;
-        if (local_t_ms_ > segment_duration_ms_)
-        {
-            local_t_ms_ = segment_duration_ms_;
-        }
-    }
-
-    const float u = clamp01(static_cast<float>(local_t_ms_) / static_cast<float>(segment_duration_ms_));
-    // 使用 quintic 曲线保证段首尾速度/加速度连续。
-    const float s = quinticBlend(u);
-
-    float q_des[kNumJoints] = {};
+    // 每个关节独立执行 CQC 插值，并下放目标到 Joint。
     for (uint8_t i = 0; i < kNumJoints; ++i)
     {
-        q_des[i] = segment_q_start_[i] + (segment_q_end_[i] - segment_q_start_[i]) * s;
-    }
-    setJointTarget(q_des);
-
-    if (local_t_ms_ >= segment_duration_ms_)
-    {
-        const uint8_t next_index = static_cast<uint8_t>(segment_index_ + 1);
-        if (next_index >= waypoint_count_)
+        if (joints_[i] == nullptr)
         {
-            running_ = false;
-            return;
+            continue;
         }
 
-        prepareSegment(next_index, segment_q_end_);
-        segment_index_ = next_index;
-        local_t_ms_ = 0;
+        float q_des = joints_[i]->getPosition();
+        if (traj_[i].planner.get(sample_tick_ms, &q_des))
+        {
+            joints_[i]->setTargetAngle(q_des);
+        }
+    }
+
+    if (elapsed_ms >= trajectory_total_ms_)
+    {
+        running_ = false;
     }
 }
 
@@ -252,27 +230,22 @@ void Arm::captureCurrentJointPosition(float q_out[kNumJoints]) const
     }
 }
 
-void Arm::prepareSegment(uint8_t index, const float start_q[kNumJoints])
+bool Arm::buildJointTrajectories(const float q_start[kNumJoints])
 {
-    if (index >= waypoint_count_)
-    {
-        return;
-    }
-
     for (uint8_t i = 0; i < kNumJoints; ++i)
     {
-        segment_q_start_[i] = start_q[i];
-        segment_q_end_[i] = waypoints_[index].q[i];
+        JointTrajectoryChannel &channel = traj_[i];
+        channel.planner.reset();
+        channel.points.clear();
+
+        for (uint8_t wp_idx = 0; wp_idx < waypoint_count_; ++wp_idx)
+        {
+            channel.points.add(waypoints_[wp_idx].duration_ms, waypoints_[wp_idx].q[i]);
+        }
+
+        channel.planner.receive(channel.points, q_start[i]);
+        channel.planner.compute(trajectory_start_tick_ms_);
     }
 
-    segment_duration_ms_ = waypoints_[index].duration_ms;
-}
-
-float Arm::quinticBlend(float u)
-{
-    const float u2 = u * u;
-    const float u3 = u2 * u;
-    const float u4 = u3 * u;
-    const float u5 = u4 * u;
-    return 10.0f * u3 - 15.0f * u4 + 6.0f * u5;
+    return true;
 }
