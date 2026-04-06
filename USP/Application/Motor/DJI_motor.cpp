@@ -33,6 +33,7 @@ void DjiMotor_OnCanFeedback(unsigned int can_rec_id)
     {
         return;
     }
+    // 在接收路径打点，供 update() 判断在线状态。
     g_dji_last_rx_tick[idx] = xTaskGetTickCount();
 }
 
@@ -75,6 +76,7 @@ HardwareFeedback DJI_Motor_2006::update()
     const TickType_t now_tick = xTaskGetTickCount();
     const TickType_t last_rx_tick = getLastRxTick(dji_motor->getRecID());
 
+    // DJI 无独立硬件状态位：用“最近反馈超时”判在线。
     if (last_rx_tick == 0 || (now_tick - last_rx_tick) > offline_timeout_tick_)
     {
         status_ = HardwareStatus::error;
@@ -96,6 +98,7 @@ HardwareFeedback DJI_Motor_2006::update()
     }
     else
     {
+        // 离线时保持上一帧反馈，避免上层状态突跳。
         feedback.current_angle = last_feedback_.current_angle;
         feedback.current_speed = last_feedback_.current_speed;
         feedback.current_torque = last_feedback_.current_torque;
@@ -175,6 +178,7 @@ HardwareFeedback DJI_Motor_3508::update()
     const TickType_t now_tick = xTaskGetTickCount();
     const TickType_t last_rx_tick = getLastRxTick(dji_motor->getRecID());
 
+    // DJI 无独立硬件状态位：用“最近反馈超时”判在线。
     if (last_rx_tick == 0 || (now_tick - last_rx_tick) > offline_timeout_tick_)
     {
         status_ = HardwareStatus::error;
@@ -196,6 +200,7 @@ HardwareFeedback DJI_Motor_3508::update()
     }
     else
     {
+        // 离线时保持上一帧反馈，避免上层状态突跳。
         feedback.current_angle = last_feedback_.current_angle;
         feedback.current_speed = last_feedback_.current_speed;
         feedback.current_torque = last_feedback_.current_torque;

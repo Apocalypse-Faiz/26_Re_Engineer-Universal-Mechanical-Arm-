@@ -20,6 +20,7 @@ inline float polarityToSign(int8_t polarity)
 
 inline MotorMode jointModeToMotorMode(JointMode mode)
 {
+    // Joint 模式与 Motor 模式一一对应。
     switch (mode)
     {
     case JointMode::MODE_POSITION:
@@ -36,6 +37,7 @@ inline MotorMode jointModeToMotorMode(JointMode mode)
 
 inline JointMode motorModeToJointMode(MotorMode mode)
 {
+    // Motor 模式与 Joint 模式一一对应。
     switch (mode)
     {
     case MotorMode::MODE_POSITION:
@@ -100,6 +102,7 @@ void SimpleTransmission::updateFeedback()
     syncModeToJoints();
 
     const MotorState &m = motor_->getState();
+    // 反馈映射：q = sgn * (m/ratio) - offset, dq = sgn * (dm/ratio), tau = sgn * (tm*ratio)。
     const float q = polarity_sign_ * (m.current_angle * inv_reduction_ratio_) - totalOffset();
     const float dq = polarity_sign_ * (m.current_speed * inv_reduction_ratio_);
     const float tau = polarity_sign_ * (m.current_torque * reduction_ratio_);
@@ -124,6 +127,7 @@ void SimpleTransmission::applyJointCommand()
     {
     case JointMode::MODE_POSITION:
     {
+        // 目标位置映射到电机空间，关节前馈力矩映射到电机侧。
         const float motor_q_des = polarity_sign_ * (q_cmd + totalOffset()) * reduction_ratio_;
         const float motor_tau_ff = polarity_sign_ * (tau_ff_joint * inv_reduction_ratio_);
         motor_->setTargetPosition(motor_q_des);
@@ -140,6 +144,7 @@ void SimpleTransmission::applyJointCommand()
 
     case JointMode::MODE_IMPEDANCE:
     {
+        // Kp/Kd 从关节空间映射到电机空间，缩放系数约为 1/ratio^2。
         ImpedanceCommand cmd;
         cmd.q_des = polarity_sign_ * (q_cmd + totalOffset()) * reduction_ratio_;
         cmd.dq_des = polarity_sign_ * (dq_cmd * reduction_ratio_);
@@ -289,6 +294,7 @@ void DifferentialTransmission::updateFeedback()
     const MotorState &m0 = motors_[0]->getState();
     const MotorState &m1 = motors_[1]->getState();
 
+    // 差速正解：由两个电机角度/速度解算两关节状态。
     const float m1_pos_neg = -m1.current_angle;
     const float q0 = 0.5f * (m0.current_angle + m1_pos_neg) - calibration_offset_[0];
     const float q1 = 0.5f * differential_reduction_ratio_ * (m0.current_angle - m1_pos_neg) - calibration_offset_[1];
@@ -297,6 +303,7 @@ void DifferentialTransmission::updateFeedback()
     const float dq0 = 0.5f * (m0.current_speed + m1_vel_neg);
     const float dq1 = 0.5f * differential_reduction_ratio_ * (m0.current_speed - m1_vel_neg);
 
+    // 力矩映射采用差速耦合关系。
     const float tq0 = m0.current_torque - m1.current_torque;
     const float tq1 = (m0.current_torque + m1.current_torque) * inv_differential_reduction_ratio_;
 
@@ -327,6 +334,7 @@ void DifferentialTransmission::applyJointCommand()
 
     if (joints_[0]->getMode() == JointMode::MODE_IMPEDANCE)
     {
+        // 若关节处于阻抗模式，在传动层先合成等效关节力矩。
         tau_ff[0] += joints_[0]->getImpedanceKp() * (joints_[0]->getTargetPosition() - joints_[0]->getPosition()) +
                      joints_[0]->getImpedanceKd() * (joints_[0]->getTargetVelocity() - joints_[0]->getVelocity());
     }
@@ -336,7 +344,7 @@ void DifferentialTransmission::applyJointCommand()
                      joints_[1]->getImpedanceKd() * (joints_[1]->getTargetVelocity() - joints_[1]->getVelocity());
     }
 
-    // 角度/速度逆解。
+    // 差速逆解：将关节角/速目标映射到双电机目标。
     const float q1_scaled = q_cmd[1] * inv_differential_reduction_ratio_;
     const float dq1_scaled = dq_cmd[1] * inv_differential_reduction_ratio_;
 
@@ -416,6 +424,7 @@ void DifferentialTransmission::calibrate(Joint *joint)
 
     if (joint == joints_[0])
     {
+        // 标定后当前位置作为该关节逻辑零点。
         calibration_offset_[0] += joints_[0]->getPosition();
     }
     else if (joint == joints_[1])

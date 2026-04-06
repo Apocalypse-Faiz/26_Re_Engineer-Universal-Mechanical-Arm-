@@ -60,7 +60,7 @@ struct MotorPidParameters
     float pos_min = 0.0f;         /**< 位置环输出下限（预留） */
     float pos_max = 0.0f;         /**< 位置环输出上限（目标速度限幅） */
     float pos_int_sep = 0.0f;     /**< 位置环积分分离阈值 */
-     float pos_int_max = 0.0f;     /**< 位置环积分上限 */
+    float pos_int_max = 0.0f;     /**< 位置环积分上限 */
     float spd_kp = 0.0f;          /**< 速度环 Kp */
     float spd_ki = 0.0f;          /**< 速度环 Ki */
     float spd_kd = 0.0f;          /**< 速度环 Kd */
@@ -204,10 +204,29 @@ public:
      */
     void execute();
 
+    /**
+     * @brief 获取当前电机反馈状态。
+     */
     const MotorState &getState() const;
+
+    /**
+     * @brief 获取当前前馈参数。
+     */
     const MotorFeedforward &getFeedforward() const;
+
+    /**
+     * @brief 获取底层硬件状态。
+     */
     MotorHardwareStatus getStatus() const;
+
+    /**
+     * @brief 获取当前控制模式。
+     */
     MotorMode getMode() const;
+
+    /**
+     * @brief 获取阻抗命令缓存。
+     */
     const ImpedanceCommand &getImpedanceCommand() const;
 
     /* 兼容旧接口的封装函数 */
@@ -222,8 +241,8 @@ public:
     void setViscous_feedforward(float data);
     void setInertia_feedforward(float data);
 
-    myPID a_pid; /**< 角度环 PID */
-    myPID v_pid; /**< 速度环 PID */
+    myPID a_pid; /**< 角度环 PID（输出目标速度） */
+    myPID v_pid; /**< 速度环 PID（输出目标力矩） */
 
 private:
     MotorHardware *specific_motor_ = nullptr;
@@ -234,12 +253,16 @@ private:
     ImpedanceCommand impedance_cmd_;
     MotorFeedforward feedforward_;
     MotorPidParameters pid_params_;
+    // 标定零位偏置：逻辑角度 = 原始角度 - 偏置。
     float angle_zero_offset_deg_ = 0.0f;
 
     float target_angle_deg_ = 0.0f;
     float target_torque_nm_ = 0.0f;
     float torque_feedforward_nm_ = 0.0f;
 
+    /**
+     * @brief 清空内部 PID 积分状态，避免切模式时突变。
+     */
     void resetInternalControllerState();
 };
 

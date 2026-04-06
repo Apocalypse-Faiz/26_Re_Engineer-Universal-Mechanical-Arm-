@@ -42,11 +42,26 @@ public:
         status_ = HardwareStatus::error;
     }
 
+    /**
+     * @brief 绑定 CAN 打包结构与发送队列句柄。
+     */
     void bindRxTxQueueHandle(Motor_CAN_COB &_motor_msg, QueueHandle_t &_CAN_TxPort);
+
+    /**
+     * @brief 设置方向极性。
+     */
     void setPolar(int polar);
+
+    /**
+     * @brief 设置单位换算比例。
+     */
     void setConversionScale(float speed_to_rad_s,
                             float current_to_torque,
                             float torque_to_out);
+
+    /**
+     * @brief 设置离线超时（无反馈判错）。
+     */
     void setOfflineTimeoutMs(unsigned int timeout_ms);
 
     HardwareFeedback update() override;
@@ -84,11 +99,26 @@ public:
         status_ = HardwareStatus::error;
     }
 
+    /**
+     * @brief 绑定 CAN 打包结构与发送队列句柄。
+     */
     void bindRxTxQueueHandle(Motor_CAN_COB &_motor_msg, QueueHandle_t &_CAN_TxPort);
+
+    /**
+     * @brief 设置方向极性。
+     */
     void setPolar(int polar);
+
+    /**
+     * @brief 设置单位换算比例。
+     */
     void setConversionScale(float speed_to_rad_s,
                             float current_to_torque,
                             float torque_to_out);
+
+    /**
+     * @brief 设置离线超时（无反馈判错）。
+     */
     void setOfflineTimeoutMs(unsigned int timeout_ms);
 
     HardwareFeedback update() override;

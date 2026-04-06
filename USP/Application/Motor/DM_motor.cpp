@@ -25,6 +25,7 @@ void DM_Motor::enableMotor()
         return;
     }
 
+    // 采用短延时确保状态切换时序稳定。
     vTaskDelay(2);
     dm_motor->ClearError();
     vTaskDelay(2);
@@ -42,6 +43,7 @@ HardwareFeedback DM_Motor::update()
         return feedback;
     }
 
+    // DM 驱动提供电机状态位，可直接映射 ready/error。
     switch (status_)
     {
     case HardwareStatus::error:
@@ -66,6 +68,7 @@ HardwareFeedback DM_Motor::update()
     {
         const float sign = static_cast<float>(polar_sign_);
         const auto &rec = dm_motor->getRecData();
+        // 统一输出到电机空间标准字段。
         feedback.current_angle = sign * rec.angle;
         feedback.current_speed = sign * rec.velocity;
         feedback.current_torque = sign * rec.torque;
@@ -90,6 +93,7 @@ void DM_Motor::setMIT(const ImpedanceCommand &motor_cmd)
         return;
     }
 
+    // DM 原生支持 MIT 控制，直接透传。
     const float sign = static_cast<float>(polar_sign_);
     dm_motor->control(sign * motor_cmd.q_des * kDegToRad,
                       sign * motor_cmd.dq_des,

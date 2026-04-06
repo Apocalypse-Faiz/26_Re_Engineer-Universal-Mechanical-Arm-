@@ -47,6 +47,11 @@ void Joint::setTargetPosition(float q_d)
     q_des_ = clampPosition(q_d);
 }
 
+void Joint::setTargetAngle(float q_d)
+{
+    setTargetPosition(q_d);
+}
+
 void Joint::setTargetVelocity(float dq_d)
 {
     dq_des_ = dq_d;
@@ -98,11 +103,13 @@ float Joint::getInertiaComp() const
 
 float Joint::getTotalTauFF() const
 {
+    // 总前馈 = 上层外部前馈 + 重力补偿 + 摩擦补偿 + 惯性补偿。
     return tau_ff_cmd_ + gravity_comp_ + friction_comp_ + inertia_comp_;
 }
 
 void Joint::setMode(JointMode mode)
 {
+    // Joint 作为模式源头时，向下同步到对应电机。
     mode_ = mode;
     if (transmission_ != nullptr)
     {
@@ -112,6 +119,7 @@ void Joint::setMode(JointMode mode)
 
 void Joint::setModeFromTransmission(JointMode mode)
 {
+    // 仅用于 Transmission 反向同步，避免触发递归同步。
     mode_ = mode;
 }
 
@@ -122,6 +130,7 @@ JointMode Joint::getMode() const
 
 void Joint::calibrate()
 {
+    // 标定由具体传动模型决定（简单传动/差速传动）。
     if (transmission_ != nullptr)
     {
         transmission_->calibrate(this);

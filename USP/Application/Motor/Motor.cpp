@@ -58,6 +58,7 @@ void Motor::update()
         return;
     }
 
+    // 读取原始反馈后统一应用逻辑零位偏置。
     const MotorState raw_state = specific_motor_->update();
     status_ = raw_state.status;
 
@@ -67,6 +68,7 @@ void Motor::update()
 
 void Motor::setMode(MotorMode mode)
 {
+    // 安全闸门：非 ready 阶段仅允许进入 DISABLED。
     if (status_ != MotorHardwareStatus::ready && mode != MotorMode::MODE_DISABLED)
     {
         return;
@@ -76,6 +78,7 @@ void Motor::setMode(MotorMode mode)
 
 void Motor::forceSetMode(MotorMode mode)
 {
+    // 切模式时同步清理目标缓存，防止旧目标泄漏到新模式。
     switch (mode)
     {
     case MotorMode::MODE_DISABLED:
@@ -109,6 +112,7 @@ void Motor::forceSetMode(MotorMode mode)
 
 void Motor::setTarget(float target_value)
 {
+    // 兼容旧接口：根据当前模式解释 target_value 语义。
     switch (mode_)
     {
     case MotorMode::MODE_POSITION:
@@ -185,10 +189,12 @@ void Motor::execute()
     switch (mode_)
     {
     case MotorMode::MODE_DISABLED:
+        // 硬件侧失能（DM stop / DJI Out=0）。
         specific_motor_->disable();
         break;
 
     case MotorMode::MODE_TORQUE:
+        // 力矩模式直接下发。
         specific_motor_->setTorque(target_torque_nm_);
         break;
 
@@ -214,6 +220,7 @@ void Motor::execute()
     }
 
     case MotorMode::MODE_IMPEDANCE:
+        // MIT 命令由底层适配器实现（原生透传或软件合成）。
         specific_motor_->setMIT(impedance_cmd_);
         break;
 

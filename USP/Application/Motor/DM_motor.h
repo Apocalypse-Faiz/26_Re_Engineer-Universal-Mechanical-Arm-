@@ -27,8 +27,19 @@ public:
     {
     }
 
+    /**
+     * @brief 绑定 DM 电机发送队列。
+     */
     void bindTxQueueHandle(QueueHandle_t _txQueue);
+
+    /**
+     * @brief 设置方向极性。
+     */
     void setPolar(int polar);
+
+    /**
+     * @brief 使能电机（清错 + 启动）。
+     */
     void enableMotor();
 
     HardwareFeedback update() override;
