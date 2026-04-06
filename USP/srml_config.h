@@ -70,15 +70,15 @@
 #define USE_SRML_FLASH                    0
 #define USE_SRML_I2C                      1
 #define USE_SRML_SPI                      0
-#define USE_SRML_VIRTUAL_COM              0   // 虚拟串口
+#define USE_SRML_VIRTUAL_COM              1   // 虚拟串口
 // Motor
 #define USE_SRML_MOTOR_DJI                1   // RM电机
 #define USE_SRML_MF9025_V2                0   // 瓴控MF9025  
-#define USE_SRML_MOTOR_DM                 0   // 达妙电机
+#define USE_SRML_MOTOR_DM                 1   // 达妙电机
 #define USE_SRML_HT04                     0   // 海泰电机
 #define USE_SRML_CYBER_GEAR               1   // 小米微电机
 // IMU
-#define USE_SRML_MPU6050                  1
+#define USE_SRML_MPU6050                  0
 #define USE_SRML_LPMS_BE2                 0   // 阿路比IMU
 #define USE_SRML_BMX055                   0   // 九轴IMU
 #define USE_SRML_BMI088                   0   // BMI088

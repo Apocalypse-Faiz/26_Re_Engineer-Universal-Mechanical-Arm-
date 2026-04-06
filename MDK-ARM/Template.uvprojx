@@ -10,15 +10,15 @@
       <TargetName>Template</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pArmCC>6160000::V6.16::ARMCLANG</pArmCC>
-      <pCCUsed>6160000::V6.16::ARMCLANG</pCCUsed>
+      <pArmCC>6240000::V6.24::ARMCLANG</pArmCC>
+      <pCCUsed>6240000::V6.24::ARMCLANG</pCCUsed>
       <uAC6>1</uAC6>
       <TargetOption>
         <TargetCommonOption>
           <Device>STM32F405RGTx</Device>
           <Vendor>STMicroelectronics</Vendor>
-          <PackID>Keil.STM32F4xx_DFP.2.16.0</PackID>
-          <PackURL>http://www.keil.com/pack/</PackURL>
+          <PackID>Keil.STM32F4xx_DFP.3.1.1</PackID>
+          <PackURL>https://www.keil.com/pack/</PackURL>
           <Cpu>IRAM(0x20000000-0x2001FFFF) IRAM2(0x10000000-0x1000FFFF) IROM(0x8000000-0x80FFFFF)  CLOCK(25000000) FPU2 CPUTYPE("Cortex-M4")</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
@@ -315,7 +315,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>2</Optim>
+            <Optim>3</Optim>
             <oTime>0</oTime>
             <SplitLS>1</SplitLS>
             <OneElfS>1</OneElfS>
@@ -607,6 +607,91 @@
               <FileName>statistics.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\SRML\Middlewares\Algorithm\Statistics\statistics.h</FilePath>
+            </File>
+            <File>
+              <FileName>cqc.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Trajectory\cqc.h</FilePath>
+            </File>
+            <File>
+              <FileName>Trajectory.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Trajectory\Trajectory.h</FilePath>
+            </File>
+            <File>
+              <FileName>PX4_math.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\PX4_math.h</FilePath>
+            </File>
+            <File>
+              <FileName>Vector.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Vector.h</FilePath>
+            </File>
+            <File>
+              <FileName>Vector2.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Vector2.h</FilePath>
+            </File>
+            <File>
+              <FileName>Vector3.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Vector3.h</FilePath>
+            </File>
+            <File>
+              <FileName>Matrix.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Matrix.h</FilePath>
+            </File>
+            <File>
+              <FileName>Dcm.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Dcm.h</FilePath>
+            </File>
+            <File>
+              <FileName>Dual.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Dual.h</FilePath>
+            </File>
+            <File>
+              <FileName>Slice.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Slice.h</FilePath>
+            </File>
+            <File>
+              <FileName>Scalar.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Scalar.h</FilePath>
+            </File>
+            <File>
+              <FileName>AxisAngle.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\AxisAngle.h</FilePath>
+            </File>
+            <File>
+              <FileName>Quaternion.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\Quaternion.h</FilePath>
+            </File>
+            <File>
+              <FileName>SquareMatrix.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\SquareMatrix.h</FilePath>
+            </File>
+            <File>
+              <FileName>PseudoInverse.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\PseudoInverse.h</FilePath>
+            </File>
+            <File>
+              <FileName>LeastSquaresSolver.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\LeastSquaresSolver.h</FilePath>
+            </File>
+            <File>
+              <FileName>helper_functions.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\SRML\Middlewares\Algorithm\Math\helper_functions.h</FilePath>
             </File>
           </Files>
         </Group>

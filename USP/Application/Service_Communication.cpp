@@ -16,6 +16,7 @@
 **/
 /* Includes ------------------------------------------------------------------*/
 #include "internal.h"
+#include "Motor/DJI_motor.h"
 /* Private define ------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 #if USE_SRML_CAN
@@ -134,9 +135,11 @@ void Task_CAN1Receive(void *arg)
       // 更新电机数据，如
       if (m3508.update(CAN_RxCOB.ID, CAN_RxCOB.Data))
       {
+        DjiMotor_OnCanFeedback(CAN_RxCOB.ID);
       }
       else if (m2006.update(CAN_RxCOB.ID, CAN_RxCOB.Data))
       {
+        DjiMotor_OnCanFeedback(CAN_RxCOB.ID);
       }
       else
       {
