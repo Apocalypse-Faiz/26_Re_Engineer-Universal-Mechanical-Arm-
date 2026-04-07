@@ -37,6 +37,7 @@ public:
         FINISHED,
         NOT_READY,
         INVALID_INPUT,
+        MODE_MISMATCH,
         MODEL_NOT_CONFIGURED,
         BUILD_FAILED,
         SAMPLE_FAILED,
@@ -269,6 +270,11 @@ private:
      * @brief 执行前一致性检查，并计算总时长。
      */
     bool validateWaypointsAndComputeTotal(std::uint32_t *total_ms) const;
+
+    /**
+     * @brief 检查全部关节是否可接收位置类目标（POSITION/IMPEDANCE）。
+     */
+    bool jointsAcceptPositionTarget() const;
 
     /**
      * @brief 安全保护：保持当前关节角作为目标。

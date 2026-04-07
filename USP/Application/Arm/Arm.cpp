@@ -234,6 +234,14 @@ bool Arm::setCartesianTarget(const Math3D::Mat4 &T_target,
         return false;
     }
 
+    // 笛卡尔目标最终会落到关节角目标，关节必须处于可接收位置命令的模式。
+    if (!jointsAcceptPositionTarget())
+    {
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
+        return false;
+    }
+
     if (!model_configured_)
     {
         last_exec_status_ = ExecStatus::MODEL_NOT_CONFIGURED;
@@ -334,6 +342,14 @@ bool Arm::startWaypointsFromCurrent()
         return false;
     }
 
+    // 轨迹执行依赖 setTargetAngle 下发，模式必须允许位置类目标。
+    if (!jointsAcceptPositionTarget())
+    {
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
+        return false;
+    }
+
     std::uint32_t total_ms = 0;
     if (!validateWaypointsAndComputeTotal(&total_ms))
     {
@@ -402,6 +418,15 @@ void Arm::update()
 {
     if (!running_)
     {
+        return;
+    }
+
+    // 运行过程中若被外部切到非位置模式，立即停止并上报模式不一致。
+    if (!jointsAcceptPositionTarget())
+    {
+        running_ = false;
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
         return;
     }
 
@@ -552,6 +577,25 @@ bool Arm::validateWaypointsAndComputeTotal(std::uint32_t *total_ms) const
     }
 
     *total_ms = sum_ms;
+    return true;
+}
+
+bool Arm::jointsAcceptPositionTarget() const
+{
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        if (joints_[i] == nullptr)
+        {
+            return false;
+        }
+
+        const JointMode mode = joints_[i]->getMode();
+        if (mode != JointMode::MODE_POSITION && mode != JointMode::MODE_IMPEDANCE)
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 
