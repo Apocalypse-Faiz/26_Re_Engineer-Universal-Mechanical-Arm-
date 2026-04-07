@@ -194,7 +194,7 @@ public:
     bool startWaypointsFromCurrent();
 
     /**
-     * @brief 停止路径执行。
+        * @brief 停止路径执行并将目标锁定到当前反馈位姿。
      */
     void stopWaypoints();
 

@@ -391,7 +391,12 @@ bool Arm::startWaypointsFromCurrent()
 
 void Arm::stopWaypoints()
 {
-    // 手动停止只退出运行态，不视为错误。
+    // 手动停止时将目标锁定到当前反馈位姿，避免继续追踪旧轨迹目标。
+    if (running_)
+    {
+        holdCurrentAsTarget();
+    }
+
     running_ = false;
     if (last_exec_status_ == ExecStatus::RUNNING)
     {
