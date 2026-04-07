@@ -44,6 +44,11 @@ float Joint::getMaxLimit() const
 
 void Joint::setTargetPosition(float q_d)
 {
+    // 位置目标仅在位置/阻抗模式下生效。
+    if (mode_ != JointMode::MODE_POSITION && mode_ != JointMode::MODE_IMPEDANCE)
+    {
+        return;
+    }
     q_des_ = clampPosition(q_d);
 }
 
@@ -54,16 +59,32 @@ void Joint::setTargetAngle(float q_d)
 
 void Joint::setTargetVelocity(float dq_d)
 {
+    // 速度目标仅在阻抗模式下使用（作为 dq_des）。
+    if (mode_ != JointMode::MODE_IMPEDANCE)
+    {
+        return;
+    }
     dq_des_ = dq_d;
 }
 
 void Joint::setTargetTorqueFF(float tau_ff)
 {
+    // 失能模式下不接受力矩相关命令。
+    if (mode_ == JointMode::MODE_DISABLED)
+    {
+        return;
+    }
     tau_ff_cmd_ = tau_ff;
 }
 
 void Joint::setImpedanceTarget(float q_d, float dq_d, float kp, float kd, float tau_ff)
 {
+    // 阻抗目标仅在阻抗模式下生效，避免误写跨模式参数。
+    if (mode_ != JointMode::MODE_IMPEDANCE)
+    {
+        return;
+    }
+
     q_des_ = clampPosition(q_d);
     dq_des_ = dq_d;
     impedance_kp_ = kp;
@@ -111,6 +132,17 @@ void Joint::setMode(JointMode mode)
 {
     // Joint 作为模式源头时，向下同步到对应电机。
     mode_ = mode;
+
+    // 安全策略：进入失能模式时清空会导致驱动输出的动态量。
+    if (mode_ == JointMode::MODE_DISABLED)
+    {
+        q_des_ = clampPosition(q_);
+        dq_des_ = 0.0f;
+        tau_ff_cmd_ = 0.0f;
+        impedance_kp_ = 0.0f;
+        impedance_kd_ = 0.0f;
+    }
+
     if (transmission_ != nullptr)
     {
         transmission_->syncModeToMotors();
@@ -121,6 +153,16 @@ void Joint::setModeFromTransmission(JointMode mode)
 {
     // 仅用于 Transmission 反向同步，避免触发递归同步。
     mode_ = mode;
+
+    // 与 setMode 保持一致的失能安全语义。
+    if (mode_ == JointMode::MODE_DISABLED)
+    {
+        q_des_ = clampPosition(q_);
+        dq_des_ = 0.0f;
+        tau_ff_cmd_ = 0.0f;
+        impedance_kp_ = 0.0f;
+        impedance_kd_ = 0.0f;
+    }
 }
 
 JointMode Joint::getMode() const

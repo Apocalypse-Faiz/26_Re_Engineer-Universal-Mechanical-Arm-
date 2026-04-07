@@ -48,7 +48,8 @@ public:
     float getMaxLimit() const;
 
     /**
-     * @brief 设置位置目标（deg）。
+        * @brief 设置位置目标（deg）。
+        * @note 仅在 MODE_POSITION / MODE_IMPEDANCE 下生效。
      */
     void setTargetPosition(float q_d);
 
@@ -58,17 +59,20 @@ public:
     void setTargetAngle(float q_d);
 
     /**
-     * @brief 设置速度目标（rad/s）。
+        * @brief 设置速度目标（rad/s）。
+        * @note 仅在 MODE_IMPEDANCE 下生效。
      */
     void setTargetVelocity(float dq_d);
 
     /**
-     * @brief 设置外部力矩前馈（N·m）。
+        * @brief 设置外部力矩前馈（N·m）。
+        * @note 在 MODE_DISABLED 下会被忽略。
      */
     void setTargetTorqueFF(float tau_ff);
 
     /**
-     * @brief 一次性设置阻抗目标。
+        * @brief 一次性设置阻抗目标。
+        * @note 仅在 MODE_IMPEDANCE 下生效。
      */
     void setImpedanceTarget(float q_d, float dq_d, float kp, float kd, float tau_ff);
 
@@ -98,11 +102,13 @@ public:
 
     /**
      * @brief 设置关节模式，并同步到关联电机。
+        * @note 进入 MODE_DISABLED 时会清零 dq/ff/阻抗增益，并将 q_des 锁定到当前反馈角。
      */
     void setMode(JointMode mode);
 
     /**
      * @brief 仅由 Transmission 反向更新模式，不触发再次同步。
+        * @note 若反向同步到 MODE_DISABLED，安全语义与 setMode 一致。
      */
     void setModeFromTransmission(JointMode mode);
 
