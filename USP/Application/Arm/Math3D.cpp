@@ -12,6 +12,7 @@ constexpr float kPi = 3.14159265358979323846f;
 
 Vec6 getColumn6(const Mat6 &A, uint8_t c)
 {
+    // 提取 6x6 矩阵的第 c 列，常用于读取旋量轴 Si。
     Vec6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -26,6 +27,7 @@ void setColumn6(Mat6 *A, uint8_t c, const Vec6 &x)
     {
         return;
     }
+    // 将向量写回 6x6 矩阵第 c 列，常用于拼装 Jacobian。
     for (uint8_t r = 0; r < 6; ++r)
     {
         A->m[r][c] = x.v[r];
@@ -34,6 +36,7 @@ void setColumn6(Mat6 *A, uint8_t c, const Vec6 &x)
 
 float clampf(float x, float lo, float hi)
 {
+    // 标量限幅，保证三角反函数输入等计算稳定。
     if (x < lo)
     {
         return lo;
@@ -49,23 +52,27 @@ float clampf(float x, float lo, float hi)
 
 bool nearZero(float value)
 {
+    // 统一“接近 0”判断，避免浮点数比较问题。
     return fabsf(value) < kEps;
 }
 
 Vec3 makeVec3(float x, float y, float z)
 {
+    // 便捷构造 3 维向量。
     Vec3 out = {{x, y, z}};
     return out;
 }
 
 Vec6 makeVec6(float v0, float v1, float v2, float v3, float v4, float v5)
 {
+    // 便捷构造 6 维向量（通常是 twist）。
     Vec6 out = {{v0, v1, v2, v3, v4, v5}};
     return out;
 }
 
 Mat3 eye3()
 {
+    // 3x3 单位矩阵。
     Mat3 out = {};
     out.m[0][0] = 1.0f;
     out.m[1][1] = 1.0f;
@@ -75,6 +82,7 @@ Mat3 eye3()
 
 Mat4 eye4()
 {
+    // 4x4 单位矩阵（齐次变换单位元）。
     Mat4 out = {};
     out.m[0][0] = 1.0f;
     out.m[1][1] = 1.0f;
@@ -85,6 +93,7 @@ Mat4 eye4()
 
 Mat6 eye6()
 {
+    // 6x6 单位矩阵。
     Mat6 out = {};
     for (uint8_t i = 0; i < 6; ++i)
     {
@@ -95,24 +104,28 @@ Mat6 eye6()
 
 Mat3 zeros3()
 {
+    // 3x3 零矩阵。
     Mat3 out = {};
     return out;
 }
 
 Mat4 zeros4()
 {
+    // 4x4 零矩阵。
     Mat4 out = {};
     return out;
 }
 
 Mat6 zeros6()
 {
+    // 6x6 零矩阵。
     Mat6 out = {};
     return out;
 }
 
 Vec3 vec3Add(const Vec3 &a, const Vec3 &b)
 {
+    // 逐元素向量加法。
     Vec3 out = {};
     for (uint8_t i = 0; i < 3; ++i)
     {
@@ -123,6 +136,7 @@ Vec3 vec3Add(const Vec3 &a, const Vec3 &b)
 
 Vec3 vec3Sub(const Vec3 &a, const Vec3 &b)
 {
+    // 逐元素向量减法。
     Vec3 out = {};
     for (uint8_t i = 0; i < 3; ++i)
     {
@@ -133,6 +147,7 @@ Vec3 vec3Sub(const Vec3 &a, const Vec3 &b)
 
 Vec3 vec3Scale(const Vec3 &a, float s)
 {
+    // 向量数乘。
     Vec3 out = {};
     for (uint8_t i = 0; i < 3; ++i)
     {
@@ -143,6 +158,7 @@ Vec3 vec3Scale(const Vec3 &a, float s)
 
 float vec3Norm(const Vec3 &a)
 {
+    // 3 维欧氏范数 ||a||2。
     float sum = 0.0f;
     for (uint8_t i = 0; i < 3; ++i)
     {
@@ -153,6 +169,7 @@ float vec3Norm(const Vec3 &a)
 
 Vec6 vec6Add(const Vec6 &a, const Vec6 &b)
 {
+    // 6 维逐元素加法。
     Vec6 out = {};
     for (uint8_t i = 0; i < 6; ++i)
     {
@@ -163,6 +180,7 @@ Vec6 vec6Add(const Vec6 &a, const Vec6 &b)
 
 Vec6 vec6Sub(const Vec6 &a, const Vec6 &b)
 {
+    // 6 维逐元素减法。
     Vec6 out = {};
     for (uint8_t i = 0; i < 6; ++i)
     {
@@ -173,6 +191,7 @@ Vec6 vec6Sub(const Vec6 &a, const Vec6 &b)
 
 Vec6 vec6Scale(const Vec6 &a, float s)
 {
+    // 6 维向量数乘。
     Vec6 out = {};
     for (uint8_t i = 0; i < 6; ++i)
     {
@@ -183,6 +202,7 @@ Vec6 vec6Scale(const Vec6 &a, float s)
 
 float vec6Norm(const Vec6 &a)
 {
+    // 6 维欧氏范数（角+线整体误差）。
     float sum = 0.0f;
     for (uint8_t i = 0; i < 6; ++i)
     {
@@ -193,6 +213,7 @@ float vec6Norm(const Vec6 &a)
 
 float vec6Norm3(const Vec6 &a)
 {
+    // 仅取 twist 前 3 维（角速度部分）范数。
     float sum = 0.0f;
     for (uint8_t i = 0; i < 3; ++i)
     {
@@ -203,6 +224,7 @@ float vec6Norm3(const Vec6 &a)
 
 float vec6NormLinear(const Vec6 &a)
 {
+    // 仅取 twist 后 3 维（线速度部分）范数。
     float sum = 0.0f;
     for (uint8_t i = 3; i < 6; ++i)
     {
@@ -213,6 +235,7 @@ float vec6NormLinear(const Vec6 &a)
 
 Mat3 mat3Add(const Mat3 &a, const Mat3 &b)
 {
+    // 3x3 逐元素加法。
     Mat3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -226,6 +249,7 @@ Mat3 mat3Add(const Mat3 &a, const Mat3 &b)
 
 Mat3 mat3Sub(const Mat3 &a, const Mat3 &b)
 {
+    // 3x3 逐元素减法。
     Mat3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -239,6 +263,7 @@ Mat3 mat3Sub(const Mat3 &a, const Mat3 &b)
 
 Mat3 mat3Scale(const Mat3 &a, float s)
 {
+    // 3x3 数乘。
     Mat3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -252,6 +277,7 @@ Mat3 mat3Scale(const Mat3 &a, float s)
 
 Mat3 mat3Mul(const Mat3 &a, const Mat3 &b)
 {
+    // 标准矩阵乘法：行点乘列。
     Mat3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -270,6 +296,7 @@ Mat3 mat3Mul(const Mat3 &a, const Mat3 &b)
 
 Mat3 mat3Transpose(const Mat3 &a)
 {
+    // 3x3 转置。
     Mat3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -283,6 +310,7 @@ Mat3 mat3Transpose(const Mat3 &a)
 
 Vec3 mat3MulVec3(const Mat3 &a, const Vec3 &x)
 {
+    // 3x3 乘 3x1 向量。
     Vec3 out = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -298,11 +326,13 @@ Vec3 mat3MulVec3(const Mat3 &a, const Vec3 &x)
 
 float mat3Trace(const Mat3 &a)
 {
+    // 矩阵迹 tr(R)，常用于旋转角提取。
     return a.m[0][0] + a.m[1][1] + a.m[2][2];
 }
 
 Mat4 mat4Mul(const Mat4 &a, const Mat4 &b)
 {
+    // 4x4 标准矩阵乘法（齐次变换复合）。
     Mat4 out = {};
     for (uint8_t r = 0; r < 4; ++r)
     {
@@ -321,6 +351,7 @@ Mat4 mat4Mul(const Mat4 &a, const Mat4 &b)
 
 Mat4 mat4Transpose(const Mat4 &a)
 {
+    // 4x4 转置。
     Mat4 out = {};
     for (uint8_t r = 0; r < 4; ++r)
     {
@@ -334,6 +365,7 @@ Mat4 mat4Transpose(const Mat4 &a)
 
 Mat6 mat6Add(const Mat6 &a, const Mat6 &b)
 {
+    // 6x6 逐元素加法。
     Mat6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -347,6 +379,7 @@ Mat6 mat6Add(const Mat6 &a, const Mat6 &b)
 
 Mat6 mat6Scale(const Mat6 &a, float s)
 {
+    // 6x6 数乘。
     Mat6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -360,6 +393,7 @@ Mat6 mat6Scale(const Mat6 &a, float s)
 
 Mat6 mat6Mul(const Mat6 &a, const Mat6 &b)
 {
+    // 6x6 标准矩阵乘法。
     Mat6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -378,6 +412,7 @@ Mat6 mat6Mul(const Mat6 &a, const Mat6 &b)
 
 Mat6 mat6Transpose(const Mat6 &a)
 {
+    // 6x6 转置。
     Mat6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -391,6 +426,7 @@ Mat6 mat6Transpose(const Mat6 &a)
 
 Vec6 mat6MulVec6(const Mat6 &a, const Vec6 &x)
 {
+    // 6x6 乘 6x1 向量。
     Vec6 out = {};
     for (uint8_t r = 0; r < 6; ++r)
     {
@@ -453,6 +489,7 @@ bool solveLinear6x6(const Mat6 &A, const Vec6 &b, Vec6 *x)
         }
 
         const float diag = aug[pivot][pivot];
+        // 归一化主元行，使主元为 1。
         for (uint8_t c = pivot; c < 7; ++c)
         {
             aug[pivot][c] /= diag;
@@ -464,6 +501,7 @@ bool solveLinear6x6(const Mat6 &A, const Vec6 &b, Vec6 *x)
             {
                 continue;
             }
+            // 消去其它行当前列，形成行最简形。
             const float factor = aug[r][pivot];
             for (uint8_t c = pivot; c < 7; ++c)
             {
@@ -481,6 +519,7 @@ bool solveLinear6x6(const Mat6 &A, const Vec6 &b, Vec6 *x)
 
 void trans_to_Rp(const Mat4 &T, Mat3 *R, Vec3 *p)
 {
+    // 将齐次变换 T 拆成旋转 R 与平移 p。
     if (R != 0)
     {
         for (uint8_t r = 0; r < 3; ++r)
@@ -502,6 +541,7 @@ void trans_to_Rp(const Mat4 &T, Mat3 *R, Vec3 *p)
 
 Mat4 trans_inv(const Mat4 &T)
 {
+    // 对 [R p; 0 1] 求逆：T^-1 = [R^T, -R^T p; 0, 1]。
     Mat3 R = {};
     Vec3 p = {};
     trans_to_Rp(T, &R, &p);
@@ -525,6 +565,7 @@ Mat4 trans_inv(const Mat4 &T)
 
 Mat3 vec_to_so3(const Vec3 &omega)
 {
+    // hat 算子：向量 -> 反对称矩阵。
     Mat3 so3 = {};
     so3.m[0][1] = -omega.v[2];
     so3.m[0][2] = omega.v[1];
@@ -537,11 +578,13 @@ Mat3 vec_to_so3(const Vec3 &omega)
 
 Vec3 so3_to_vec(const Mat3 &so3)
 {
+    // vee 算子：反对称矩阵 -> 向量。
     return makeVec3(so3.m[2][1], so3.m[0][2], so3.m[1][0]);
 }
 
 Mat4 vec_to_se3(const Vec6 &V)
 {
+    // 将 twist V=[w;v] 组装为 se(3) 矩阵 [w^ v; 0 0]。
     Mat4 se3 = {};
     const Vec3 omg = makeVec3(V.v[0], V.v[1], V.v[2]);
     const Mat3 so3 = vec_to_so3(omg);
@@ -562,12 +605,14 @@ Mat4 vec_to_se3(const Vec6 &V)
 
 Vec6 se3_to_vec(const Mat4 &se3)
 {
+    // se(3) 矩阵反解为 twist 向量 [w; v]。
     return makeVec6(se3.m[2][1], se3.m[0][2], se3.m[1][0],
                     se3.m[0][3], se3.m[1][3], se3.m[2][3]);
 }
 
 void axis_angle(const Vec3 &vec, Vec3 *axis, float *angle)
 {
+    // 轴角分解：vec = axis * angle。
     const float theta = vec3Norm(vec);
     if (angle != 0)
     {
@@ -589,6 +634,7 @@ void axis_angle(const Vec3 &vec, Vec3 *axis, float *angle)
 
 Mat3 matrix_exp3(const Mat3 &so3)
 {
+    // SO(3) 指数映射：so(3) -> SO(3)。
     const Vec3 omgtheta = so3_to_vec(so3);
     const float n = vec3Norm(omgtheta);
 
@@ -610,6 +656,7 @@ Mat3 matrix_exp3(const Mat3 &so3)
 
 Mat4 matrix_exp6(const Mat4 &se3)
 {
+    // SE(3) 指数映射：se(3) -> SE(3)。
     Mat3 so3 = {};
     for (uint8_t r = 0; r < 3; ++r)
     {
@@ -634,6 +681,7 @@ Mat4 matrix_exp6(const Mat4 &se3)
 
     float theta = 0.0f;
     axis_angle(omgtheta, 0, &theta);
+    // 将 [w]theta 归一化为 [w]。
     const Mat3 omgmat = mat3Scale(so3, 1.0f / theta);
     const Mat3 R = matrix_exp3(so3);
 
@@ -643,6 +691,7 @@ Mat4 matrix_exp6(const Mat4 &se3)
     V = mat3Add(V, mat3Scale(omgmat, 1.0f - cosf(theta)));
     V = mat3Add(V, mat3Scale(mat3Mul(omgmat, omgmat), theta - sinf(theta)));
 
+    // p = V(theta) * v，注意 se3 中平移项是 v*theta。
     const Vec3 v = makeVec3(se3.m[0][3], se3.m[1][3], se3.m[2][3]);
     const Vec3 p = mat3MulVec3(V, vec3Scale(v, 1.0f / theta));
 
@@ -661,6 +710,7 @@ Mat4 matrix_exp6(const Mat4 &se3)
 
 Mat3 matrix_log3(const Mat3 &R)
 {
+    // SO(3) 对数映射：R -> [w]theta。
     const float acosinput = clampf((mat3Trace(R) - 1.0f) * 0.5f, -1.0f, 1.0f);
 
     if (acosinput >= 1.0f - kEps)
@@ -692,6 +742,7 @@ Mat3 matrix_log3(const Mat3 &R)
         return vec_to_so3(vec3Scale(omg, kPi));
     }
 
+    // 一般情形：log(R)=theta/(2sin(theta))*(R-R^T)。
     const float theta = acosf(acosinput);
     const Mat3 Rt = mat3Transpose(R);
     const Mat3 skew = mat3Sub(R, Rt);
@@ -700,6 +751,7 @@ Mat3 matrix_log3(const Mat3 &R)
 
 Mat4 matrix_log6(const Mat4 &T)
 {
+    // SE(3) 对数映射：T -> [S]theta。
     Mat3 R = {};
     Vec3 p = {};
     trans_to_Rp(T, &R, &p);
@@ -716,6 +768,7 @@ Mat4 matrix_log6(const Mat4 &T)
         return out;
     }
 
+    // 由 R 求旋转角 theta。
     const float theta = acosf(clampf((mat3Trace(R) - 1.0f) * 0.5f, -1.0f, 1.0f));
     const Mat3 I = eye3();
     const Mat3 term1 = mat3Sub(I, mat3Scale(omgmat, 0.5f));
@@ -727,6 +780,7 @@ Mat4 matrix_log6(const Mat4 &T)
     Mat3 omg2 = mat3Mul(omgmat, omgmat);
     omg2 = mat3Scale(omg2, coeff / theta);
 
+    // G(theta)^-1，用于从平移 p 反解 twist 线速度分量 v。
     const Mat3 Ginv = mat3Add(term1, omg2);
     const Vec3 v = mat3MulVec3(Ginv, p);
 
@@ -746,6 +800,7 @@ Mat4 matrix_log6(const Mat4 &T)
 
 Mat6 adjoint(const Mat4 &T)
 {
+    // 构造伴随矩阵 Ad_T，用于 twist 坐标变换。
     Mat3 R = {};
     Vec3 p = {};
     trans_to_Rp(T, &R, &p);
@@ -779,6 +834,7 @@ Mat4 fkine(const Mat4 &M, const Mat6 &Slist, const float q[kDoF])
     // PoE: T = exp([S1]q1)...exp([Sn]qn)M
     Mat4 T = M;
 
+    // 右侧从 M 开始累乘，倒序可避免中间临时数组。
     for (int i = static_cast<int>(kDoF) - 1; i >= 0; --i)
     {
         const Vec6 Si = getColumn6(Slist, static_cast<uint8_t>(i));
@@ -802,6 +858,7 @@ Mat6 cal_Jacobian(const Mat6 &Slist, const float q[kDoF])
         const Vec6 Si_prev_q = vec6Scale(Si_prev, q[i - 1]);
         T = mat4Mul(T, matrix_exp6(vec_to_se3(Si_prev_q)));
 
+        // 用当前累计变换的伴随矩阵，把第 i 根轴映射到空间坐标系。
         const Mat6 AdT = adjoint(T);
         const Vec6 Si = getColumn6(Slist, i);
         const Vec6 Ji = mat6MulVec6(AdT, Si);
@@ -837,6 +894,7 @@ bool ikine(const Mat6 &Slist,
 
     for (int iter = 0; iter < max_iterations; ++iter)
     {
+        // 1) 当前位姿与目标位姿之差，转为空间 twist 误差 Vs。
         const Mat4 Tsb = fkine(M, Slist, q);
         const Mat4 T_err = mat4Mul(trans_inv(Tsb), T);
         const Vec6 Vb = se3_to_vec(matrix_log6(T_err));
@@ -859,6 +917,7 @@ bool ikine(const Mat6 &Slist,
         A = mat6Add(A, mat6Scale(I6, lambda * lambda));
 
         Vec6 y = {};
+        // 2) 先解 y=(JJ^T+λ²I)^(-1)Vs，再左乘 J^T 得到 Δq。
         if (!solveLinear6x6(A, Vs, &y))
         {
             break;
@@ -874,6 +933,7 @@ bool ikine(const Mat6 &Slist,
 
         for (uint8_t i = 0; i < kDoF; ++i)
         {
+            // 3) 迭代更新关节变量。
             q[i] += delta_q.v[i];
         }
     }
@@ -908,6 +968,7 @@ Mat4 transformation_mdh(float alpha,
     const float ca = cosf(alpha);
     const float sa = sinf(alpha);
 
+    // 按 MDH 约定直接展开得到齐次变换矩阵。
     Mat4 T = eye4();
 
     T.m[0][0] = ct;
