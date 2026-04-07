@@ -153,16 +153,6 @@ bool ActionGroupManager::update()
         current_group_id_ = kInvalidGroupId;
     }
 
-    uint8_t next_group_id = kInvalidGroupId;
-    if (popNextGroupId(&next_group_id))
-    {
-        const GroupEntry *entry = findGroup(next_group_id);
-        if (entry != nullptr)
-        {
-            return loadAndStart(*entry);
-        }
-    }
-
     return false;
 }
 

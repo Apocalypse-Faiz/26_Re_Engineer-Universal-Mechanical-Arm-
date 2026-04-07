@@ -41,7 +41,7 @@ public:
     void stop();
 
     /**
-     * @brief 轮询更新；内部会驱动 Arm::update() 并自动切换下一动作组。
+        * @brief 轮询更新；内部会驱动 Arm::update()，单次仅执行当前动作组。
      * @return true 当前存在正在运行的动作组，否则 false。
      */
     bool update();
