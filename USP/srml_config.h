@@ -78,7 +78,7 @@
 #define USE_SRML_HT04                     0   // 海泰电机
 #define USE_SRML_CYBER_GEAR               1   // 小米微电机
 // IMU
-#define USE_SRML_MPU6050                  0
+#define USE_SRML_MPU6050                  1
 #define USE_SRML_LPMS_BE2                 0   // 阿路比IMU
 #define USE_SRML_BMX055                   0   // 九轴IMU
 #define USE_SRML_BMI088                   0   // BMI088

@@ -28,6 +28,22 @@ public:
     static const uint8_t kMaxWaypoints = 24;
 
     /**
+     * @brief 轨迹/笛卡尔指令最近一次执行状态。
+     */
+    enum class ExecStatus : uint8_t
+    {
+        IDLE = 0,
+        RUNNING,
+        FINISHED,
+        NOT_READY,
+        INVALID_INPUT,
+        MODEL_NOT_CONFIGURED,
+        BUILD_FAILED,
+        SAMPLE_FAILED,
+        IK_FAILED
+    };
+
+    /**
      * @brief 默认构造：使用单位模型（M=I, Slist=0）。
      */
     Arm();
@@ -187,6 +203,16 @@ public:
     bool waypointsRunning() const;
 
     /**
+     * @brief 获取最近一次执行状态。
+     */
+    ExecStatus getLastExecStatus() const;
+
+    /**
+     * @brief 获取累计轨迹采样失败次数。
+     */
+    uint16_t getPlannerSampleFailCount() const;
+
+    /**
      * @brief 由外部周期调用，内部直接使用 HAL_GetTick() 作为时基。
      */
     void update();
@@ -194,6 +220,7 @@ public:
 private:
     static const uint16_t kTrajectoryPointCapacity = kMaxWaypoints;
     static const uint16_t kCqcCapacity = static_cast<uint16_t>(kMaxWaypoints + 1);
+    static const uint8_t kMaxConsecutiveSampleFail = 3;
 
     struct JointTrajectoryChannel
     {
@@ -214,6 +241,7 @@ private:
     // 当前生效模型（默认与 home 相同，保留扩展空间）。
     Math3D::Mat4 M_;
     Math3D::Mat6 Slist_;
+    bool model_configured_;
 
     ArmWaypoint waypoints_[kMaxWaypoints];
     uint8_t waypoint_count_;
@@ -221,6 +249,9 @@ private:
     JointTrajectoryChannel traj_[kNumJoints];
 
     bool running_;
+    ExecStatus last_exec_status_;
+    uint16_t planner_sample_fail_count_;
+    uint8_t consecutive_sample_fail_count_;
     std::uint32_t trajectory_start_tick_ms_;
     std::uint32_t trajectory_total_ms_;
 
@@ -233,6 +264,16 @@ private:
      * @brief 按动作组构建每个关节的 CQC 轨迹规划器。
      */
     bool buildJointTrajectories(const float q_start[kNumJoints]);
+
+    /**
+     * @brief 执行前一致性检查，并计算总时长。
+     */
+    bool validateWaypointsAndComputeTotal(std::uint32_t *total_ms) const;
+
+    /**
+     * @brief 安全保护：保持当前关节角作为目标。
+     */
+    void holdCurrentAsTarget();
 
     // Arm 对外接口统一使用角度制（deg），内部 PoE 运算统一转弧度（rad）。
     static void degArrayToRad(const float in_deg[kNumJoints], float out_rad[kNumJoints]);
