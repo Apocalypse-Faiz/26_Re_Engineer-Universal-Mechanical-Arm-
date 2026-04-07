@@ -14,8 +14,33 @@ Arm::Arm()
         joints_[i] = nullptr;
     }
 
-    M_ = Math3D::eye4();
-    Slist_ = Math3D::zeros6();
+    M0_ = Math3D::eye4();
+    Slist0_ = Math3D::zeros6();
+    M_ = M0_;
+    Slist_ = Slist0_;
+}
+
+Arm::Arm(const float alpha[kNumJoints],
+         const float a[kNumJoints],
+         const float d[kNumJoints],
+         const float theta_offset[kNumJoints],
+         Math3D::AngleUnit angle_unit,
+         Math3D::LengthUnit length_unit)
+    : Arm()
+{
+    (void)setModelFromMDH(alpha, a, d, theta_offset, angle_unit, length_unit);
+}
+
+Arm::Arm(const float alpha[kNumJoints],
+         const float a[kNumJoints],
+         const float d[kNumJoints],
+         const float theta_offset[kNumJoints],
+         const bool sigma[kNumJoints],
+         Math3D::AngleUnit angle_unit,
+         Math3D::LengthUnit length_unit)
+    : Arm()
+{
+    (void)setModelFromMDH(alpha, a, d, theta_offset, sigma, angle_unit, length_unit);
 }
 
 void Arm::bindJoint(uint8_t index, Joint *joint)
@@ -41,25 +66,125 @@ bool Arm::isReady() const
 
 void Arm::setModel(const Math3D::Mat4 &M, const Math3D::Mat6 &Slist)
 {
+    M0_ = M;
+    Slist0_ = Slist;
     M_ = M;
     Slist_ = Slist;
 }
 
+bool Arm::setModelFromMDH(const float alpha[kNumJoints],
+                          const float a[kNumJoints],
+                          const float d[kNumJoints],
+                          const float theta_offset[kNumJoints])
+{
+    return setModelFromMDH(alpha,
+                           a,
+                           d,
+                           theta_offset,
+                           Math3D::AngleUnit::Radians,
+                           Math3D::LengthUnit::Meters);
+}
+
+bool Arm::setModelFromMDH(const float alpha[kNumJoints],
+                          const float a[kNumJoints],
+                          const float d[kNumJoints],
+                          const float theta_offset[kNumJoints],
+                          Math3D::AngleUnit angle_unit,
+                          Math3D::LengthUnit length_unit)
+{
+    Math3D::Mat4 M_tmp = Math3D::eye4();
+    Math3D::Mat6 Slist_tmp = Math3D::zeros6();
+    const bool ok = Math3D::buildModelFromMDH(alpha,
+                                              a,
+                                              d,
+                                              theta_offset,
+                                              angle_unit,
+                                              length_unit,
+                                              &M_tmp,
+                                              &Slist_tmp);
+    if (!ok)
+    {
+        return false;
+    }
+
+    setModel(M_tmp, Slist_tmp);
+    return true;
+}
+
+bool Arm::setModelFromMDH(const float alpha[kNumJoints],
+                          const float a[kNumJoints],
+                          const float d[kNumJoints],
+                          const float theta_offset[kNumJoints],
+                          const bool sigma[kNumJoints])
+{
+    return setModelFromMDH(alpha,
+                           a,
+                           d,
+                           theta_offset,
+                           sigma,
+                           Math3D::AngleUnit::Radians,
+                           Math3D::LengthUnit::Meters);
+}
+
+bool Arm::setModelFromMDH(const float alpha[kNumJoints],
+                          const float a[kNumJoints],
+                          const float d[kNumJoints],
+                          const float theta_offset[kNumJoints],
+                          const bool sigma[kNumJoints],
+                          Math3D::AngleUnit angle_unit,
+                          Math3D::LengthUnit length_unit)
+{
+    Math3D::Mat4 M_tmp = Math3D::eye4();
+    Math3D::Mat6 Slist_tmp = Math3D::zeros6();
+    const bool ok = Math3D::buildModelFromMDH(alpha,
+                                              a,
+                                              d,
+                                              theta_offset,
+                                              sigma,
+                                              angle_unit,
+                                              length_unit,
+                                              &M_tmp,
+                                              &Slist_tmp);
+    if (!ok)
+    {
+        return false;
+    }
+
+    setModel(M_tmp, Slist_tmp);
+    return true;
+}
+
+const Math3D::Mat4 &Arm::getHomeM() const
+{
+    return M0_;
+}
+
+const Math3D::Mat6 &Arm::getHomeSlist() const
+{
+    return Slist0_;
+}
+
 Math3D::Mat4 Arm::fkine(const float q[kNumJoints]) const
 {
-    return Math3D::fkine(M_, Slist_, q);
+    float q_rad[kNumJoints] = {};
+    degArrayToRad(q, q_rad);
+    return Math3D::fkine(M_, Slist_, q_rad);
 }
 
 Math3D::Mat4 Arm::fkineCurrent() const
 {
-    float q[kNumJoints] = {};
-    captureCurrentJointPosition(q);
-    return Math3D::fkine(M_, Slist_, q);
+    float q_deg[kNumJoints] = {};
+    float q_rad[kNumJoints] = {};
+    captureCurrentJointPosition(q_deg);
+    degArrayToRad(q_deg, q_rad);
+    return Math3D::fkine(M_, Slist_, q_rad);
 }
 
 Math3D::Mat6 Arm::jacobian(const float q[kNumJoints]) const
 {
-    return Math3D::cal_Jacobian(Slist_, q);
+    float q_rad[kNumJoints] = {};
+    degArrayToRad(q, q_rad);
+    return Math3D::cal_Jacobian(Slist_, q_rad);
 }
 
 bool Arm::ikine(const Math3D::Mat4 &T_target,
@@ -71,7 +196,13 @@ bool Arm::ikine(const Math3D::Mat4 &T_target,
                 float max_step,
                 int max_iterations) const
 {
-    return Math3D::ikine(Slist_, M_, T_target, q0, eomg, ev, q_out, lambda, max_step, max_iterations);
+    float q0_rad[kNumJoints] = {};
+    float q_out_rad[kNumJoints] = {};
+    degArrayToRad(q0, q0_rad);
+
+    const bool ok = Math3D::ikine(Slist_, M_, T_target, q0_rad, eomg, ev, q_out_rad, lambda, max_step, max_iterations);
+    radArrayToDeg(q_out_rad, q_out);
+    return ok;
 }
 
 bool Arm::setCartesianTarget(const Math3D::Mat4 &T_target,
@@ -248,4 +379,20 @@ bool Arm::buildJointTrajectories(const float q_start[kNumJoints])
     }
 
     return true;
+}
+
+void Arm::degArrayToRad(const float in_deg[kNumJoints], float out_rad[kNumJoints])
+{
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        out_rad[i] = Math3D::angleToRad(in_deg[i], Math3D::AngleUnit::Degrees);
+    }
+}
+
+void Arm::radArrayToDeg(const float in_rad[kNumJoints], float out_deg[kNumJoints])
+{
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        out_deg[i] = Math3D::radToAngle(in_rad[i], Math3D::AngleUnit::Degrees);
+    }
 }

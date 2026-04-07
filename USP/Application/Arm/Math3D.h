@@ -12,6 +12,24 @@ namespace Math3D
 static const uint8_t kDoF = 6;
 
 /**
+ * @brief 角度单位。
+ */
+enum class AngleUnit : uint8_t
+{
+    Radians = 0,
+    Degrees
+};
+
+/**
+ * @brief 长度单位。
+ */
+enum class LengthUnit : uint8_t
+{
+    Meters = 0,
+    Millimeters
+};
+
+/**
  * @brief 3 维向量。
  */
 struct Vec3
@@ -55,6 +73,21 @@ struct Mat6
  * @brief 判断标量是否接近零。
  */
 bool nearZero(float value);
+
+/**
+ * @brief 按指定角度单位转换到弧度。
+ */
+float angleToRad(float value, AngleUnit unit);
+
+/**
+ * @brief 将弧度值按指定单位输出。
+ */
+float radToAngle(float value_rad, AngleUnit unit);
+
+/**
+ * @brief 按指定长度单位转换到米。
+ */
+float lengthToMeter(float value, LengthUnit unit);
 
 Vec3 makeVec3(float x, float y, float z);
 Vec6 makeVec6(float v0, float v1, float v2, float v3, float v4, float v5);
@@ -195,6 +228,59 @@ Mat4 transformation_mdh(float alpha,
                         float theta,
                         bool sigma,
                         float q);
+
+/**
+ * @brief 由 MDH 参数构建 PoE 模型（默认全部为转动关节）。
+ * @param alpha MDH alpha 数组（rad）
+ * @param a MDH a 数组
+ * @param d MDH d 数组
+ * @param theta_offset MDH theta 偏置数组（rad）
+ * @param M_out 输出零位齐次变换矩阵 M
+ * @param Slist_out 输出空间旋量轴矩阵 Slist（列向量）
+ */
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       Mat4 *M_out,
+                       Mat6 *Slist_out);
+
+/**
+ * @brief 由 MDH 参数构建 PoE 模型（默认全部为转动关节，支持单位转换）。
+ */
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       AngleUnit angle_unit,
+                       LengthUnit length_unit,
+                       Mat4 *M_out,
+                       Mat6 *Slist_out);
+
+/**
+ * @brief 由 MDH 参数构建 PoE 模型（可指定转动/移动关节）。
+ * @param sigma true=转动关节，false=移动关节
+ */
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       const bool sigma[kDoF],
+                       Mat4 *M_out,
+                       Mat6 *Slist_out);
+
+/**
+ * @brief 由 MDH 参数构建 PoE 模型（可指定转动/移动关节，支持单位转换）。
+ */
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       const bool sigma[kDoF],
+                       AngleUnit angle_unit,
+                       LengthUnit length_unit,
+                       Mat4 *M_out,
+                       Mat6 *Slist_out);
 
 } // namespace Math3D
 

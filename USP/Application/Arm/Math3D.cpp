@@ -48,12 +48,36 @@ float clampf(float x, float lo, float hi)
     return x;
 }
 
+Vec3 vec3Cross(const Vec3 &a, const Vec3 &b)
+{
+    Vec3 out = {};
+    out.v[0] = a.v[1] * b.v[2] - a.v[2] * b.v[1];
+    out.v[1] = a.v[2] * b.v[0] - a.v[0] * b.v[2];
+    out.v[2] = a.v[0] * b.v[1] - a.v[1] * b.v[0];
+    return out;
+}
+
 } // namespace
 
 bool nearZero(float value)
 {
     // 统一“接近 0”判断，避免浮点数比较问题。
     return fabsf(value) < kEps;
+}
+
+float angleToRad(float value, AngleUnit unit)
+{
+    return (unit == AngleUnit::Degrees) ? (value * (kPi / 180.0f)) : value;
+}
+
+float radToAngle(float value_rad, AngleUnit unit)
+{
+    return (unit == AngleUnit::Degrees) ? (value_rad * (180.0f / kPi)) : value_rad;
+}
+
+float lengthToMeter(float value, LengthUnit unit)
+{
+    return (unit == LengthUnit::Millimeters) ? (value * 0.001f) : value;
 }
 
 Vec3 makeVec3(float x, float y, float z)
@@ -987,6 +1011,123 @@ Mat4 transformation_mdh(float alpha,
     T.m[2][3] = d * ca;
 
     return T;
+}
+
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       Mat4 *M_out,
+                       Mat6 *Slist_out)
+{
+    return buildModelFromMDH(alpha,
+                             a,
+                             d,
+                             theta_offset,
+                             AngleUnit::Radians,
+                             LengthUnit::Meters,
+                             M_out,
+                             Slist_out);
+}
+
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       AngleUnit angle_unit,
+                       LengthUnit length_unit,
+                       Mat4 *M_out,
+                       Mat6 *Slist_out)
+{
+    bool sigma[kDoF] = {true, true, true, true, true, true};
+    return buildModelFromMDH(alpha,
+                             a,
+                             d,
+                             theta_offset,
+                             sigma,
+                             angle_unit,
+                             length_unit,
+                             M_out,
+                             Slist_out);
+}
+
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       const bool sigma[kDoF],
+                       Mat4 *M_out,
+                       Mat6 *Slist_out)
+{
+    return buildModelFromMDH(alpha,
+                             a,
+                             d,
+                             theta_offset,
+                             sigma,
+                             AngleUnit::Radians,
+                             LengthUnit::Meters,
+                             M_out,
+                             Slist_out);
+}
+
+bool buildModelFromMDH(const float alpha[kDoF],
+                       const float a[kDoF],
+                       const float d[kDoF],
+                       const float theta_offset[kDoF],
+                       const bool sigma[kDoF],
+                       AngleUnit angle_unit,
+                       LengthUnit length_unit,
+                       Mat4 *M_out,
+                       Mat6 *Slist_out)
+{
+    if (alpha == 0 || a == 0 || d == 0 || theta_offset == 0 || sigma == 0 || M_out == 0 || Slist_out == 0)
+    {
+        return false;
+    }
+
+    // 对齐 MATLAB 流程：逐节累乘 MDH 变换，最终 T 即零位 M。
+    Mat4 T = eye4();
+    Mat6 Slist = zeros6();
+
+    for (uint8_t i = 0; i < kDoF; ++i)
+    {
+        const float alpha_rad = angleToRad(alpha[i], angle_unit);
+        const float a_m = lengthToMeter(a[i], length_unit);
+        const float d_m = lengthToMeter(d[i], length_unit);
+        const float theta_offset_rad = angleToRad(theta_offset[i], angle_unit);
+
+        const Mat4 A_i = transformation_mdh(alpha_rad, a_m, d_m, theta_offset_rad, sigma[i], 0.0f);
+        T = mat4Mul(T, A_i);
+
+        const Vec3 z = makeVec3(T.m[0][2], T.m[1][2], T.m[2][2]);
+        const Vec3 p = makeVec3(T.m[0][3], T.m[1][3], T.m[2][3]);
+
+        Vec3 w = makeVec3(0.0f, 0.0f, 0.0f);
+        Vec3 v = makeVec3(0.0f, 0.0f, 0.0f);
+
+        if (sigma[i])
+        {
+            // 转动关节：S=[w; v], 其中 v=q×w（等价于 -w×q）。
+            w = z;
+            v = vec3Cross(p, z);
+        }
+        else
+        {
+            // 移动关节：S=[0; z]。
+            v = z;
+        }
+
+        Slist.m[0][i] = w.v[0];
+        Slist.m[1][i] = w.v[1];
+        Slist.m[2][i] = w.v[2];
+        Slist.m[3][i] = v.v[0];
+        Slist.m[4][i] = v.v[1];
+        Slist.m[5][i] = v.v[2];
+    }
+
+    *M_out = T;
+    *Slist_out = Slist;
+    return true;
 }
 
 } // namespace Math3D

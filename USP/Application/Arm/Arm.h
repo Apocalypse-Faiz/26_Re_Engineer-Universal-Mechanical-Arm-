@@ -27,7 +27,31 @@ public:
     static const uint8_t kNumJoints = Math3D::kDoF;
     static const uint8_t kMaxWaypoints = 24;
 
+    /**
+     * @brief 默认构造：使用单位模型（M=I, Slist=0）。
+     */
     Arm();
+
+    /**
+     * @brief 构造时使用 MDH 参数创建零位模型（默认全转动关节）。
+     */
+    Arm(const float alpha[kNumJoints],
+        const float a[kNumJoints],
+        const float d[kNumJoints],
+        const float theta_offset[kNumJoints],
+        Math3D::AngleUnit angle_unit = Math3D::AngleUnit::Radians,
+        Math3D::LengthUnit length_unit = Math3D::LengthUnit::Meters);
+
+    /**
+     * @brief 构造时使用 MDH 参数创建零位模型（可指定关节类型）。
+     */
+    Arm(const float alpha[kNumJoints],
+        const float a[kNumJoints],
+        const float d[kNumJoints],
+        const float theta_offset[kNumJoints],
+        const bool sigma[kNumJoints],
+        Math3D::AngleUnit angle_unit = Math3D::AngleUnit::Radians,
+        Math3D::LengthUnit length_unit = Math3D::LengthUnit::Meters);
 
     /**
      * @brief 绑定第 index 个关节。
@@ -47,7 +71,56 @@ public:
     void setModel(const Math3D::Mat4 &M, const Math3D::Mat6 &Slist);
 
     /**
-     * @brief 前向运动学（输入关节角）。
+     * @brief 使用 MDH 参数自动构建并设置 PoE 模型（默认全转动关节）。
+     */
+    bool setModelFromMDH(const float alpha[kNumJoints],
+                         const float a[kNumJoints],
+                         const float d[kNumJoints],
+                         const float theta_offset[kNumJoints]);
+
+    /**
+     * @brief 使用 MDH 参数自动构建并设置 PoE 模型（默认全转动关节，支持单位转换）。
+     */
+    bool setModelFromMDH(const float alpha[kNumJoints],
+                         const float a[kNumJoints],
+                         const float d[kNumJoints],
+                         const float theta_offset[kNumJoints],
+                         Math3D::AngleUnit angle_unit,
+                         Math3D::LengthUnit length_unit);
+
+    /**
+     * @brief 使用 MDH 参数自动构建并设置 PoE 模型（可指定关节类型）。
+     * @param sigma true=转动关节，false=移动关节
+     */
+    bool setModelFromMDH(const float alpha[kNumJoints],
+                         const float a[kNumJoints],
+                         const float d[kNumJoints],
+                         const float theta_offset[kNumJoints],
+                         const bool sigma[kNumJoints]);
+
+    /**
+     * @brief 使用 MDH 参数自动构建并设置 PoE 模型（可指定关节类型，支持单位转换）。
+     */
+    bool setModelFromMDH(const float alpha[kNumJoints],
+                         const float a[kNumJoints],
+                         const float d[kNumJoints],
+                         const float theta_offset[kNumJoints],
+                         const bool sigma[kNumJoints],
+                         Math3D::AngleUnit angle_unit,
+                         Math3D::LengthUnit length_unit);
+
+    /**
+     * @brief 获取零位模型（home）M。
+     */
+    const Math3D::Mat4 &getHomeM() const;
+
+    /**
+     * @brief 获取零位模型（home）Slist。
+     */
+    const Math3D::Mat6 &getHomeSlist() const;
+
+    /**
+     * @brief 前向运动学（输入关节角，单位 deg）。
      */
     Math3D::Mat4 fkine(const float q[kNumJoints]) const;
 
@@ -57,12 +130,12 @@ public:
     Math3D::Mat4 fkineCurrent() const;
 
     /**
-     * @brief 空间雅可比矩阵。
+     * @brief 空间雅可比矩阵（输入关节角，单位 deg）。
      */
     Math3D::Mat6 jacobian(const float q[kNumJoints]) const;
 
     /**
-     * @brief 数值逆运动学（DLS）。
+     * @brief 数值逆运动学（DLS，q0/q_out 单位 deg）。
      */
     bool ikine(const Math3D::Mat4 &T_target,
                const float q0[kNumJoints],
@@ -114,9 +187,9 @@ public:
     bool waypointsRunning() const;
 
     /**
-         * @brief 由外部周期调用，内部直接使用 HAL_GetTick() 作为时基。
+     * @brief 由外部周期调用，内部直接使用 HAL_GetTick() 作为时基。
      */
-        void update();
+    void update();
 
 private:
     static const uint16_t kTrajectoryPointCapacity = kMaxWaypoints;
@@ -134,6 +207,11 @@ private:
 
     Joint *joints_[kNumJoints];
 
+    // 零位模型（home）：由 setModel/setModelFromMDH 或构造函数建立。
+    Math3D::Mat4 M0_;
+    Math3D::Mat6 Slist0_;
+
+    // 当前生效模型（默认与 home 相同，保留扩展空间）。
     Math3D::Mat4 M_;
     Math3D::Mat6 Slist_;
 
@@ -155,6 +233,10 @@ private:
      * @brief 按动作组构建每个关节的 CQC 轨迹规划器。
      */
     bool buildJointTrajectories(const float q_start[kNumJoints]);
+
+    // Arm 对外接口统一使用角度制（deg），内部 PoE 运算统一转弧度（rad）。
+    static void degArrayToRad(const float in_deg[kNumJoints], float out_rad[kNumJoints]);
+    static void radArrayToDeg(const float in_rad[kNumJoints], float out_deg[kNumJoints]);
 };
 
 #endif
