@@ -13,7 +13,11 @@ Arm::Arm()
             planner_sample_fail_count_(0),
             consecutive_sample_fail_count_(0),
             trajectory_start_tick_ms_(0),
-            trajectory_total_ms_(0)
+            trajectory_total_ms_(0),
+    admittance_force_lpf_x_(25.0f, 1000.0f),
+    admittance_force_lpf_y_(25.0f, 1000.0f),
+    admittance_force_lpf_z_(25.0f, 1000.0f),
+            admittance_state_initialized_(false)
 {
     // 关节槽位默认全空，必须由上层按索引绑定后才可进入 ready 状态。
     for (uint8_t i = 0; i < kNumJoints; ++i)
@@ -27,6 +31,18 @@ Arm::Arm()
     // 当前模型初值与 home 模型一致，后续可扩展为在线模型切换。
     M_ = M0_;
     Slist_ = Slist0_;
+
+    admittance_ref_pose_ = M0_;
+    admittance_cmd_pose_ = M0_;
+
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+        admittance_cmd_pos_m_[i] = 0.0f;
+        admittance_vel_mps_[i] = 0.0f;
+    }
+
+    external_wrench_raw_ = Math3D::makeVec6(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    external_wrench_filtered_ = external_wrench_raw_;
 }
 
 Arm::Arm(const float alpha[kNumJoints],
@@ -419,6 +435,330 @@ uint16_t Arm::getPlannerSampleFailCount() const
     return planner_sample_fail_count_;
 }
 
+void Arm::setAdmittanceConfig(const AdmittanceConfig &config)
+{
+    // 参数入口统一做健壮化，避免负阻尼/零质量等导致数值不稳定。
+    admittance_config_ = config;
+
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+        if (admittance_config_.mass[i] < 1e-4f)
+        {
+            admittance_config_.mass[i] = 1e-4f;
+        }
+        if (admittance_config_.damping[i] < 0.0f)
+        {
+            admittance_config_.damping[i] = 0.0f;
+        }
+        if (admittance_config_.stiffness[i] < 0.0f)
+        {
+            admittance_config_.stiffness[i] = 0.0f;
+        }
+    }
+
+    admittance_config_.wrench_lowpass_alpha = clampScalar(admittance_config_.wrench_lowpass_alpha, 0.0f, 1.0f);
+    if (admittance_config_.force_lpf_cutoff_hz < 1e-3f)
+    {
+        admittance_config_.force_lpf_cutoff_hz = 1e-3f;
+    }
+    if (admittance_config_.control_frequency_hz < 1e-3f)
+    {
+        admittance_config_.control_frequency_hz = 1e-3f;
+    }
+    if (admittance_config_.force_lpf_damping < 0.0f)
+    {
+        admittance_config_.force_lpf_damping = 0.0f;
+    }
+    if (admittance_config_.force_deadband_n < 0.0f)
+    {
+        admittance_config_.force_deadband_n = 0.0f;
+    }
+    if (admittance_config_.max_force_n < 0.0f)
+    {
+        admittance_config_.max_force_n = 0.0f;
+    }
+    if (admittance_config_.max_velocity_mps < 0.0f)
+    {
+        admittance_config_.max_velocity_mps = 0.0f;
+    }
+    if (admittance_config_.max_position_offset_m < 0.0f)
+    {
+        admittance_config_.max_position_offset_m = 0.0f;
+    }
+    if (admittance_config_.wrench_dls_lambda < 1e-4f)
+    {
+        admittance_config_.wrench_dls_lambda = 1e-4f;
+    }
+
+    // 复用 SRML 二阶巴特沃斯低通滤波器处理外力分量。
+    admittance_force_lpf_x_.calculateCoefficients(admittance_config_.force_lpf_cutoff_hz,
+                                                  admittance_config_.control_frequency_hz,
+                                                  admittance_config_.force_lpf_damping);
+    admittance_force_lpf_y_.calculateCoefficients(admittance_config_.force_lpf_cutoff_hz,
+                                                  admittance_config_.control_frequency_hz,
+                                                  admittance_config_.force_lpf_damping);
+    admittance_force_lpf_z_.calculateCoefficients(admittance_config_.force_lpf_cutoff_hz,
+                                                  admittance_config_.control_frequency_hz,
+                                                  admittance_config_.force_lpf_damping);
+
+    if (!admittance_config_.enable)
+    {
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            admittance_vel_mps_[i] = 0.0f;
+        }
+    }
+}
+
+const Arm::AdmittanceConfig &Arm::getAdmittanceConfig() const
+{
+    return admittance_config_;
+}
+
+void Arm::setAdmittanceEnabled(bool enable)
+{
+    admittance_config_.enable = enable;
+    if (!admittance_config_.enable)
+    {
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            admittance_vel_mps_[i] = 0.0f;
+        }
+        return;
+    }
+
+    if (!admittance_state_initialized_)
+    {
+        (void)resetAdmittanceStateFromCurrentPose();
+    }
+}
+
+bool Arm::isAdmittanceEnabled() const
+{
+    return admittance_config_.enable;
+}
+
+bool Arm::resetAdmittanceStateFromCurrentPose()
+{
+    if (!isReady() || !model_configured_)
+    {
+        return false;
+    }
+
+    // 以当前位姿作为导纳初值，避免首次启用时出现跳变。
+    admittance_ref_pose_ = fkineCurrent();
+    admittance_cmd_pose_ = admittance_ref_pose_;
+
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+        admittance_cmd_pos_m_[i] = admittance_ref_pose_.m[i][3];
+        admittance_vel_mps_[i] = 0.0f;
+    }
+
+    external_wrench_raw_ = Math3D::makeVec6(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    external_wrench_filtered_ = external_wrench_raw_;
+    admittance_force_lpf_x_.reset();
+    admittance_force_lpf_y_.reset();
+    admittance_force_lpf_z_.reset();
+    admittance_state_initialized_ = true;
+    return true;
+}
+
+void Arm::setAdmittanceReferencePose(const Math3D::Mat4 &T_ref)
+{
+    admittance_ref_pose_ = T_ref;
+
+    if (!admittance_state_initialized_)
+    {
+        admittance_cmd_pose_ = T_ref;
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            admittance_cmd_pos_m_[i] = T_ref.m[i][3];
+            admittance_vel_mps_[i] = 0.0f;
+        }
+        admittance_force_lpf_x_.reset();
+        admittance_force_lpf_y_.reset();
+        admittance_force_lpf_z_.reset();
+        admittance_state_initialized_ = true;
+    }
+}
+
+bool Arm::estimateExternalWrenchFromJointTorque(Math3D::Vec6 *wrench_out) const
+{
+    if (wrench_out == nullptr || !isReady())
+    {
+        return false;
+    }
+
+    // 当前关节姿态下的空间雅可比 J(q)。
+    float q_deg[kNumJoints] = {};
+    captureCurrentJointPosition(q_deg);
+    const Math3D::Mat6 J = jacobian(q_deg);
+    const Math3D::Mat6 JT = Math3D::mat6Transpose(J);
+
+    Math3D::Vec6 tau_ext = {};
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        if (joints_[i] == nullptr)
+        {
+            return false;
+        }
+
+        // 关节净外力矩估计：测量值减去已知模型前馈项。
+        tau_ext.v[i] = joints_[i]->getTorque() - joints_[i]->getTotalTauFF();
+    }
+
+    // DLS 反解末端外力：F = (J*J^T + lambda^2 I)^-1 * J * tau_ext。
+    const Math3D::Mat6 JJT = Math3D::mat6Mul(J, JT);
+    const float lambda2 = admittance_config_.wrench_dls_lambda * admittance_config_.wrench_dls_lambda;
+    const Math3D::Mat6 regularization = Math3D::mat6Scale(Math3D::eye6(), lambda2);
+    const Math3D::Mat6 A = Math3D::mat6Add(JJT, regularization);
+    const Math3D::Vec6 b = Math3D::mat6MulVec6(J, tau_ext);
+
+    Math3D::Vec6 wrench = {};
+    if (!Math3D::solveLinear6x6(A, b, &wrench))
+    {
+        return false;
+    }
+
+    *wrench_out = wrench;
+    return true;
+}
+
+bool Arm::updateAdmittance(float dt_s,
+                           float ik_eomg,
+                           float ik_ev,
+                           float ik_lambda,
+                           float ik_max_step,
+                           int ik_max_iterations)
+{
+    if (!admittance_config_.enable)
+    {
+        last_exec_status_ = ExecStatus::ADMITTANCE_DISABLED;
+        return false;
+    }
+
+    if (!(dt_s > 0.0f) || !std::isfinite(dt_s))
+    {
+        last_exec_status_ = ExecStatus::INVALID_INPUT;
+        return false;
+    }
+
+    if (!isReady())
+    {
+        last_exec_status_ = ExecStatus::NOT_READY;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!jointsAcceptPositionTarget())
+    {
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!model_configured_)
+    {
+        last_exec_status_ = ExecStatus::MODEL_NOT_CONFIGURED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    // 启用后首次运行自动做状态对齐，避免导纳内部状态未初始化。
+    if (!admittance_state_initialized_ && !resetAdmittanceStateFromCurrentPose())
+    {
+        last_exec_status_ = ExecStatus::INVALID_INPUT;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    // 1) 外力估计（关节净外力矩 -> 末端 wrench）。
+    Math3D::Vec6 wrench_raw = {};
+    if (!estimateExternalWrenchFromJointTorque(&wrench_raw))
+    {
+        last_exec_status_ = ExecStatus::WRENCH_ESTIMATE_FAILED;
+        holdCurrentAsTarget();
+        return false;
+    }
+    external_wrench_raw_ = wrench_raw;
+
+    // 2) 外力滤波：角力矩分量直接透传，线力分量由 SRML 二阶低通处理。
+    external_wrench_filtered_.v[0] = external_wrench_raw_.v[0];
+    external_wrench_filtered_.v[1] = external_wrench_raw_.v[1];
+    external_wrench_filtered_.v[2] = external_wrench_raw_.v[2];
+    external_wrench_filtered_.v[3] = admittance_force_lpf_x_.f(external_wrench_raw_.v[3]);
+    external_wrench_filtered_.v[4] = admittance_force_lpf_y_.f(external_wrench_raw_.v[4]);
+    external_wrench_filtered_.v[5] = admittance_force_lpf_z_.f(external_wrench_raw_.v[5]);
+
+    // 3) 平移 3 轴导纳积分：死区 + 限幅 + M-D-K 离散更新。
+    // 当前实现使用 wrench 线力分量 [3..5] -> [fx, fy, fz]。
+    for (uint8_t axis = 0; axis < 3; ++axis)
+    {
+        float f = external_wrench_filtered_.v[axis + 3];
+
+        if (std::fabs(f) < admittance_config_.force_deadband_n)
+        {
+            f = 0.0f;
+        }
+        f = clampScalar(f, -admittance_config_.max_force_n, admittance_config_.max_force_n);
+        external_wrench_filtered_.v[axis + 3] = f;
+
+        const float ref_pos = admittance_ref_pose_.m[axis][3];
+        const float pos_err = admittance_cmd_pos_m_[axis] - ref_pos;
+
+        const float acc = (f - admittance_config_.damping[axis] * admittance_vel_mps_[axis] -
+                           admittance_config_.stiffness[axis] * pos_err) /
+                          admittance_config_.mass[axis];
+
+        admittance_vel_mps_[axis] += acc * dt_s;
+        admittance_vel_mps_[axis] = clampScalar(admittance_vel_mps_[axis],
+                                                -admittance_config_.max_velocity_mps,
+                                                admittance_config_.max_velocity_mps);
+
+        admittance_cmd_pos_m_[axis] += admittance_vel_mps_[axis] * dt_s;
+
+        float offset = admittance_cmd_pos_m_[axis] - ref_pos;
+        offset = clampScalar(offset,
+                             -admittance_config_.max_position_offset_m,
+                             admittance_config_.max_position_offset_m);
+        admittance_cmd_pos_m_[axis] = ref_pos + offset;
+    }
+
+    admittance_cmd_pose_ = admittance_ref_pose_;
+    for (uint8_t axis = 0; axis < 3; ++axis)
+    {
+        admittance_cmd_pose_.m[axis][3] = admittance_cmd_pos_m_[axis];
+    }
+
+    // 4) 由导纳修正位姿做 IK，得到关节目标并下发。
+    float q0[kNumJoints] = {};
+    captureCurrentJointPosition(q0);
+
+    float q_cmd[kNumJoints] = {};
+    if (!ikine(admittance_cmd_pose_, q0, ik_eomg, ik_ev, q_cmd, ik_lambda, ik_max_step, ik_max_iterations))
+    {
+        last_exec_status_ = ExecStatus::IK_FAILED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    setJointTarget(q_cmd);
+    last_exec_status_ = ExecStatus::IDLE;
+    return true;
+}
+
+bool Arm::getAdmittanceCommandPose(Math3D::Mat4 *T_cmd_out) const
+{
+    if (T_cmd_out == nullptr || !admittance_state_initialized_)
+    {
+        return false;
+    }
+
+    *T_cmd_out = admittance_cmd_pose_;
+    return true;
+}
+
 void Arm::update()
 {
     if (!running_)
@@ -602,6 +942,19 @@ bool Arm::jointsAcceptPositionTarget() const
     }
 
     return true;
+}
+
+float Arm::clampScalar(float x, float lo, float hi)
+{
+    if (x < lo)
+    {
+        return lo;
+    }
+    if (x > hi)
+    {
+        return hi;
+    }
+    return x;
 }
 
 void Arm::holdCurrentAsTarget()

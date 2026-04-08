@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "Math3D.h"
+#include "Middlewares/Algorithm/Filters/SecondButterworthLPF.h"
 #include "Middlewares/Algorithm/Trajectory/cqc.h"
 
 class Joint;
@@ -41,7 +42,55 @@ public:
         MODEL_NOT_CONFIGURED,
         BUILD_FAILED,
         SAMPLE_FAILED,
-        IK_FAILED
+        IK_FAILED,
+        ADMITTANCE_DISABLED,
+        WRENCH_ESTIMATE_FAILED
+    };
+
+    /**
+     * @brief 笛卡尔导纳控制参数（当前实现为平移 3 轴）。
+        * @note 外力向量采用 twist 顺序：[wx, wy, wz, fx, fy, fz]。
+     */
+    struct AdmittanceConfig
+    {
+        bool enable;
+        float mass[3];                 /**< 虚拟质量 M */
+        float damping[3];              /**< 虚拟阻尼 D */
+        float stiffness[3];            /**< 虚拟刚度 K */
+        float wrench_lowpass_alpha;    /**< 兼容字段：外力一阶低通系数 [0,1]（当前实现不使用） */
+        float force_lpf_cutoff_hz;     /**< 外力二阶低通截止频率（Hz） */
+        float control_frequency_hz;    /**< 控制频率（Hz） */
+        float force_lpf_damping;       /**< 二阶低通阻尼比 */
+        float force_deadband_n;        /**< 力死区阈值（N） */
+        float max_force_n;             /**< 力限幅（N） */
+        float max_velocity_mps;        /**< 导纳速度限幅（m/s） */
+        float max_position_offset_m;   /**< 相对参考位姿的位置偏移限幅（m） */
+        float wrench_dls_lambda;       /**< 外力估计 DLS 阻尼系数 */
+
+        AdmittanceConfig()
+            : enable(false),
+              wrench_lowpass_alpha(0.2f),
+                            force_lpf_cutoff_hz(25.0f),
+                            control_frequency_hz(1000.0f),
+                            force_lpf_damping(0.70710678f),
+              force_deadband_n(0.5f),
+              max_force_n(80.0f),
+              max_velocity_mps(0.25f),
+              max_position_offset_m(0.08f),
+              wrench_dls_lambda(0.10f)
+        {
+            mass[0] = 1.5f;
+            mass[1] = 1.5f;
+            mass[2] = 1.5f;
+
+            damping[0] = 60.0f;
+            damping[1] = 60.0f;
+            damping[2] = 60.0f;
+
+            stiffness[0] = 150.0f;
+            stiffness[1] = 150.0f;
+            stiffness[2] = 150.0f;
+        }
     };
 
     /**
@@ -214,6 +263,59 @@ public:
     uint16_t getPlannerSampleFailCount() const;
 
     /**
+     * @brief 设置导纳控制参数。
+     */
+    void setAdmittanceConfig(const AdmittanceConfig &config);
+
+    /**
+     * @brief 获取当前导纳控制参数。
+     */
+    const AdmittanceConfig &getAdmittanceConfig() const;
+
+    /**
+     * @brief 启用/关闭导纳控制。
+     */
+    void setAdmittanceEnabled(bool enable);
+
+    /**
+     * @brief 导纳控制是否启用。
+     */
+    bool isAdmittanceEnabled() const;
+
+    /**
+     * @brief 将导纳内部状态重置到当前末端位姿。
+     */
+    bool resetAdmittanceStateFromCurrentPose();
+
+    /**
+        * @brief 设置导纳参考位姿（未初始化时会同步重置导纳状态）。
+        * @note 导纳位移偏移以该位姿平移分量作为零点。
+     */
+    void setAdmittanceReferencePose(const Math3D::Mat4 &T_ref);
+
+    /**
+     * @brief 由关节力矩反馈估计末端外力（wrench）。
+        * @note 当前估计采用 tau_ext = tau_meas - tau_ff，再经 DLS 反解末端 wrench。
+     */
+    bool estimateExternalWrenchFromJointTorque(Math3D::Vec6 *wrench_out) const;
+
+    /**
+     * @brief 导纳控制周期更新（净外力矩 -> 外力估计 -> 导纳积分 -> IK -> 下发）。
+        * @note 当前仅对平移 3 轴做导纳，姿态保持参考位姿不变。
+     */
+    bool updateAdmittance(float dt_s,
+                          float ik_eomg = 1e-3f,
+                          float ik_ev = 1e-3f,
+                          float ik_lambda = 0.05f,
+                          float ik_max_step = 0.2f,
+                          int ik_max_iterations = 80);
+
+    /**
+     * @brief 获取当前导纳修正后的目标位姿。
+     */
+    bool getAdmittanceCommandPose(Math3D::Mat4 *T_cmd_out) const;
+
+    /**
      * @brief 由外部周期调用，内部直接使用 HAL_GetTick() 作为时基。
      */
     void update();
@@ -256,6 +358,22 @@ private:
     std::uint32_t trajectory_start_tick_ms_;
     std::uint32_t trajectory_total_ms_;
 
+    AdmittanceConfig admittance_config_;
+    LPF_SecondOrder_Classdef admittance_force_lpf_x_;
+    LPF_SecondOrder_Classdef admittance_force_lpf_y_;
+    LPF_SecondOrder_Classdef admittance_force_lpf_z_;
+    bool admittance_state_initialized_;
+    // 导纳参考位姿（通常来自轨迹/规划器）。
+    Math3D::Mat4 admittance_ref_pose_;
+    // 导纳修正后的实时命令位姿。
+    Math3D::Mat4 admittance_cmd_pose_;
+    // 当前导纳平移状态（m, m/s）。
+    float admittance_cmd_pos_m_[3];
+    float admittance_vel_mps_[3];
+    // 末端外力估计（原始/滤波后）。
+    Math3D::Vec6 external_wrench_raw_;
+    Math3D::Vec6 external_wrench_filtered_;
+
     /**
      * @brief 采集当前关节角。
      */
@@ -275,6 +393,11 @@ private:
      * @brief 检查全部关节是否可接收位置类目标（POSITION/IMPEDANCE）。
      */
     bool jointsAcceptPositionTarget() const;
+
+    /**
+     * @brief 标量限幅。
+     */
+    static float clampScalar(float x, float lo, float hi);
 
     /**
      * @brief 安全保护：保持当前关节角作为目标。
