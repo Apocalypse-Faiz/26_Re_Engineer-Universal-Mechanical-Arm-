@@ -5,6 +5,39 @@
 #include "main.h"
 #include "../Joint/Joint.h"
 
+namespace
+{
+// 目标变化判定使用位置/旋转分离阈值，避免矩阵元素微抖动触发频繁重启。
+constexpr float kCartesianTargetPosChangeEpsM = 2e-4f;
+constexpr float kCartesianTargetRotElemChangeEps = 1e-4f;
+// 笛卡尔增量 IK 的独立默认预算，不再复用导纳配置项。
+constexpr uint8_t kCartesianIkDefaultIterationBudget = 2;
+
+bool hasCartesianTargetChanged(const Math3D::Mat4 &next_target, const Math3D::Mat4 &prev_target)
+{
+    for (uint8_t axis = 0; axis < 3; ++axis)
+    {
+        if (std::fabs(next_target.m[axis][3] - prev_target.m[axis][3]) > kCartesianTargetPosChangeEpsM)
+        {
+            return true;
+        }
+    }
+
+    for (uint8_t r = 0; r < 3; ++r)
+    {
+        for (uint8_t c = 0; c < 3; ++c)
+        {
+            if (std::fabs(next_target.m[r][c] - prev_target.m[r][c]) > kCartesianTargetRotElemChangeEps)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+} // namespace
+
 Arm::Arm()
     : model_configured_(false),
       waypoint_count_(0),
@@ -335,29 +368,15 @@ bool Arm::updateCartesianTargetIncremental(const Math3D::Mat4 &T_target,
 
     if (iteration_budget == 0)
     {
-        // 与导纳增量 IK 保持一致：预算可走配置默认值，并兜底至少 1 步。
-        iteration_budget = admittance_config_.ik_iterations_per_step;
-        if (iteration_budget == 0)
-        {
-            iteration_budget = 1;
-        }
+        // 使用笛卡尔增量 IK 的独立默认预算，避免与导纳配置耦合。
+        iteration_budget = kCartesianIkDefaultIterationBudget;
     }
 
     // 目标变化则重启增量 IK，从当前反馈角重新起算。
-    bool target_changed = !cartesian_ik_target_valid_;    // 首次调用必定视为目标变化，后续通过数值比较判断。
+    bool target_changed = !cartesian_ik_target_valid_;    // 首次调用必定视为目标变化。
     if (!target_changed)
     {
-        for (uint8_t r = 0; r < 4 && !target_changed; ++r)
-        {
-            for (uint8_t c = 0; c < 4; ++c)
-            {
-                if (std::fabs(T_target.m[r][c] - cartesian_ik_target_pose_.m[r][c]) > 1e-5f)
-                {
-                    target_changed = true;
-                    break;
-                }
-            }
-        }
+        target_changed = hasCartesianTargetChanged(T_target, cartesian_ik_target_pose_);
     }
 
     if (target_changed)

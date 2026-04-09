@@ -227,7 +227,7 @@ public:
     /**
      * @brief 增量式笛卡尔目标更新：每次执行有限步 IK 并下发中间关节目标。
      * @note 若目标位姿变化，会自动重启增量 IK 任务。
-     * @param iteration_budget 本次允许的 IK 迭代步数（0 表示使用默认配置并兜底为 1）
+        * @param iteration_budget 本次允许的 IK 迭代步数（0 表示使用笛卡尔增量 IK 的独立默认预算）
      * @param max_iterations_total 单个目标允许的累计迭代上限
      */
     bool updateCartesianTargetIncremental(const Math3D::Mat4 &T_target,
