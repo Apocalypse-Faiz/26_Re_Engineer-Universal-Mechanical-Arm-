@@ -254,9 +254,20 @@ public:
     uint16_t getCartesianIkIterationCount() const;
 
     /**
-     * @brief 下发关节角目标（deg）。
+     * @brief 设置关节角目标（deg）。
+     * @note 导纳关闭时直接下发到 Joint；导纳开启时仅更新缓存，等待导纳修正链路输出。
      */
     void setJointTarget(const float q_target[kNumJoints]);
+
+    /**
+     * @brief 调试接口：读取当前关节目标缓存（名义目标角，单位 deg）。
+     */
+    bool getJointTargetCache(float q_out[kNumJoints]) const;
+
+    /**
+     * @brief 调试接口：读取最近一次实际下发到 Joint 的目标角（单位 deg）。
+     */
+    bool getLastAppliedJointTarget(float q_out[kNumJoints]) const;
 
     /**
      * @brief 清空路径点并停止执行。
@@ -463,10 +474,39 @@ private:
     // 当前笛卡尔增量 IK 目标位姿。
     Math3D::Mat4 cartesian_ik_target_pose_;
 
+    // 关节目标角缓存（轨迹插值先写缓存，再由后续链路决定最终下发值）。
+    float joint_target_cache_deg_[kNumJoints];
+    bool joint_target_cache_valid_;
+    // 最近一次实际下发到 Joint 的目标角（用于调试名义目标与修正输出差异）。
+    float last_applied_joint_target_deg_[kNumJoints];
+    bool last_applied_joint_target_valid_;
+    // 控制周期时基（用于导纳 dt 估计）。
+    std::uint32_t last_control_tick_ms_;
+
     /**
      * @brief 采集当前关节角。
      */
     void captureCurrentJointPosition(float q_out[kNumJoints]) const;
+
+    /**
+     * @brief 更新关节目标角缓存，不直接下发到 Joint。
+     */
+    void setJointTargetCache(const float q_target[kNumJoints]);
+
+    /**
+     * @brief 将缓存中的关节目标角统一下发到 Joint。
+     */
+    void applyJointTargetCache();
+
+    /**
+     * @brief 直接下发关节目标角到 Joint（绕过缓存策略）。
+     */
+    void applyJointTargetDirect(const float q_target[kNumJoints]);
+
+    /**
+     * @brief 根据系统 tick 估计控制周期 dt（秒），并做合理限幅。
+     */
+    float computeControlDtSec(std::uint32_t now_tick_ms);
 
     /**
      * @brief 按动作组构建每个关节的 CQC 轨迹规划器。

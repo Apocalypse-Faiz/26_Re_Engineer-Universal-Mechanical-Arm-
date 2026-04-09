@@ -57,7 +57,10 @@ Arm::Arm()
     cartesian_ik_target_valid_(false),
     cartesian_ik_in_progress_(false),
     cartesian_ik_converged_(false),
-    cartesian_ik_iter_count_(0)
+        cartesian_ik_iter_count_(0),
+        joint_target_cache_valid_(false),
+    last_applied_joint_target_valid_(false),
+        last_control_tick_ms_(0)
 {
     // 关节槽位默认全空，必须由上层按索引绑定后才可进入 ready 状态。
     for (uint8_t i = 0; i < kNumJoints; ++i)
@@ -88,6 +91,8 @@ Arm::Arm()
     {
         admittance_ik_q_work_deg_[i] = 0.0f;
         cartesian_ik_q_work_deg_[i] = 0.0f;
+        joint_target_cache_deg_[i] = 0.0f;
+        last_applied_joint_target_deg_[i] = 0.0f;
     }
     cartesian_ik_target_pose_ = M0_;
 }
@@ -433,7 +438,7 @@ bool Arm::updateCartesianTargetIncremental(const Math3D::Mat4 &T_target,
     }
 
     cartesian_ik_iter_count_ = static_cast<uint16_t>(cartesian_ik_iter_count_ + iter_this_step);
-    setJointTarget(cartesian_ik_q_work_deg_);
+    applyJointTargetDirect(cartesian_ik_q_work_deg_);
 
     if (converged)
     {
@@ -474,6 +479,77 @@ uint16_t Arm::getCartesianIkIterationCount() const
 
 void Arm::setJointTarget(const float q_target[kNumJoints])
 {
+    setJointTargetCache(q_target);
+
+    // 两种位控语义：
+    // 1) 导纳关闭：目标角直接下发；
+    // 2) 导纳开启：仅缓存，交由导纳控制链路读取缓存后输出修正目标。
+    if (!admittance_config_.enable)
+    {
+        applyJointTargetCache();
+    }
+}
+
+bool Arm::getJointTargetCache(float q_out[kNumJoints]) const
+{
+    if (q_out == nullptr || !joint_target_cache_valid_)
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        q_out[i] = joint_target_cache_deg_[i];
+    }
+    return true;
+}
+
+bool Arm::getLastAppliedJointTarget(float q_out[kNumJoints]) const
+{
+    if (q_out == nullptr || !last_applied_joint_target_valid_)
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        q_out[i] = last_applied_joint_target_deg_[i];
+    }
+    return true;
+}
+
+void Arm::setJointTargetCache(const float q_target[kNumJoints])
+{
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        joint_target_cache_deg_[i] = q_target[i];
+    }
+    joint_target_cache_valid_ = true;
+}
+
+void Arm::applyJointTargetCache()
+{
+    if (!joint_target_cache_valid_)
+    {
+        return;
+    }
+
+    applyJointTargetDirect(joint_target_cache_deg_);
+}
+
+void Arm::applyJointTargetDirect(const float q_target[kNumJoints])
+{
+    if (q_target == nullptr)
+    {
+        return;
+    }
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        last_applied_joint_target_deg_[i] = q_target[i];
+    }
+    last_applied_joint_target_valid_ = true;
+
     for (uint8_t i = 0; i < kNumJoints; ++i)
     {
         if (joints_[i] != nullptr)
@@ -481,6 +557,29 @@ void Arm::setJointTarget(const float q_target[kNumJoints])
             joints_[i]->setTargetAngle(q_target[i]);
         }
     }
+}
+
+float Arm::computeControlDtSec(std::uint32_t now_tick_ms)
+{
+    if (last_control_tick_ms_ == 0)
+    {
+        last_control_tick_ms_ = now_tick_ms;
+        return 0.001f;
+    }
+
+    const std::uint32_t elapsed_ms = now_tick_ms - last_control_tick_ms_;
+    last_control_tick_ms_ = now_tick_ms;
+
+    float dt_s = static_cast<float>(elapsed_ms) * 0.001f;
+    if (!(dt_s > 0.0f) || !std::isfinite(dt_s))
+    {
+        dt_s = 0.001f;
+    }
+    if (dt_s > 0.05f)
+    {
+        dt_s = 0.05f;
+    }
+    return dt_s;
 }
 
 void Arm::clearWaypoints()
@@ -564,9 +663,11 @@ bool Arm::startWaypointsFromCurrent()
 
     float q_start[kNumJoints] = {};
     captureCurrentJointPosition(q_start);
+    setJointTargetCache(q_start);
 
     // 使用绝对时基，避免周期抖动带来的累积误差。
     trajectory_start_tick_ms_ = HAL_GetTick();
+    last_control_tick_ms_ = trajectory_start_tick_ms_;
     trajectory_total_ms_ = total_ms;
     planner_sample_fail_count_ = 0;
     consecutive_sample_fail_count_ = 0;
@@ -911,6 +1012,13 @@ bool Arm::updateAdmittanceOuter(float dt_s)
         return false;
     }
 
+    // 导纳开启时，统一使用关节目标缓存生成参考位姿。
+    if (joint_target_cache_valid_)
+    {
+        const Math3D::Mat4 T_ref_from_cache = fkine(joint_target_cache_deg_);
+        setAdmittanceReferencePose(T_ref_from_cache);
+    }
+
     Math3D::Vec6 wrench_raw = {};
     if (!estimateExternalWrenchFromJointTorque(&wrench_raw))
     {
@@ -1105,7 +1213,7 @@ bool Arm::updateAdmittanceIkStep(uint8_t iteration_budget,
 
     admittance_ik_iter_count_ = static_cast<uint16_t>(admittance_ik_iter_count_ + iter_this_step);
     // 即使尚未收敛，也下发中间解，保证末端连续逼近目标。
-    setJointTarget(admittance_ik_q_work_deg_);
+    applyJointTargetDirect(admittance_ik_q_work_deg_);
 
     if (converged)
     {
@@ -1183,6 +1291,7 @@ void Arm::update()
     // 每个关节独立执行 CQC 插值，并下发目标到 Joint。
     // 任一关节采样失败都视为本周期失败，触发保护计数。
     bool sample_ok = true;
+    float q_nominal[kNumJoints] = {};
     for (uint8_t i = 0; i < kNumJoints; ++i)
     {
         if (joints_[i] == nullptr)
@@ -1193,7 +1302,7 @@ void Arm::update()
         float q_des = joints_[i]->getPosition();
         if (traj_[i].planner.get(sample_tick_ms, &q_des))
         {
-            joints_[i]->setTargetAngle(q_des);
+            q_nominal[i] = q_des;
         }
         else
         {
@@ -1224,6 +1333,34 @@ void Arm::update()
     else
     {
         consecutive_sample_fail_count_ = 0;
+
+        // 轨迹插值先仅更新缓存；最终下发由“导纳修正链路”统一决定。
+        setJointTargetCache(q_nominal);
+
+        if (admittance_config_.enable && model_configured_)
+        {
+            // 以未修正轨迹缓存生成导纳参考位姿，再输出修正后的关节目标。
+            const Math3D::Mat4 T_ref = fkine(q_nominal);
+            setAdmittanceReferencePose(T_ref);
+
+            const float dt_s = computeControlDtSec(now_tick_ms);
+            const ExecStatus waypoint_status_snapshot = last_exec_status_;
+            if (!updateAdmittance(dt_s))
+            {
+                // 导纳失败时回退到未修正轨迹目标，保持轨迹连续性。
+                applyJointTargetCache();
+            }
+
+            // 轨迹执行态优先，避免导纳内部状态码覆盖路径执行状态。
+            if (running_)
+            {
+                last_exec_status_ = waypoint_status_snapshot;
+            }
+        }
+        else
+        {
+            applyJointTargetCache();
+        }
     }
 
     if (elapsed_ms >= trajectory_total_ms_)
@@ -1360,7 +1497,8 @@ void Arm::holdCurrentAsTarget()
     // 保护动作：锁定当前反馈角作为目标，避免上层失败时电机继续追踪旧轨迹。
     float q_now[kNumJoints] = {};
     captureCurrentJointPosition(q_now);
-    setJointTarget(q_now);
+    setJointTargetCache(q_now);
+    applyJointTargetDirect(q_now);
 }
 
 void Arm::degArrayToRad(const float in_deg[kNumJoints], float out_rad[kNumJoints])
