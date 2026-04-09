@@ -6,18 +6,25 @@
 #include "../Joint/Joint.h"
 
 Arm::Arm()
-        : model_configured_(false),
-            waypoint_count_(0),
-            running_(false),
-            last_exec_status_(ExecStatus::IDLE),
-            planner_sample_fail_count_(0),
-            consecutive_sample_fail_count_(0),
-            trajectory_start_tick_ms_(0),
-            trajectory_total_ms_(0),
-    admittance_force_lpf_x_(25.0f, 1000.0f),
-    admittance_force_lpf_y_(25.0f, 1000.0f),
-    admittance_force_lpf_z_(25.0f, 1000.0f),
-            admittance_state_initialized_(false)
+    : model_configured_(false),
+      waypoint_count_(0),
+      running_(false),
+      last_exec_status_(ExecStatus::IDLE),
+      planner_sample_fail_count_(0),
+      consecutive_sample_fail_count_(0),
+      trajectory_start_tick_ms_(0),
+      trajectory_total_ms_(0),
+      admittance_force_lpf_x_(25.0f, 1000.0f),
+      admittance_force_lpf_y_(25.0f, 1000.0f),
+      admittance_force_lpf_z_(25.0f, 1000.0f),
+      admittance_state_initialized_(false),
+      admittance_ik_in_progress_(false),
+      admittance_ik_converged_(false),
+    admittance_ik_iter_count_(0),
+    cartesian_ik_target_valid_(false),
+    cartesian_ik_in_progress_(false),
+    cartesian_ik_converged_(false),
+    cartesian_ik_iter_count_(0)
 {
     // 关节槽位默认全空，必须由上层按索引绑定后才可进入 ready 状态。
     for (uint8_t i = 0; i < kNumJoints; ++i)
@@ -43,6 +50,13 @@ Arm::Arm()
 
     external_wrench_raw_ = Math3D::makeVec6(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     external_wrench_filtered_ = external_wrench_raw_;
+    admittance_ik_target_pose_ = admittance_cmd_pose_;
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        admittance_ik_q_work_deg_[i] = 0.0f;
+        cartesian_ik_q_work_deg_[i] = 0.0f;
+    }
+    cartesian_ik_target_pose_ = M0_;
 }
 
 Arm::Arm(const float alpha[kNumJoints],
@@ -284,6 +298,161 @@ bool Arm::setCartesianTarget(const Math3D::Mat4 &T_target,
     return true;
 }
 
+bool Arm::updateCartesianTargetIncremental(const Math3D::Mat4 &T_target,
+                                           uint8_t iteration_budget,
+                                           float eomg,
+                                           float ev,
+                                           float lambda,
+                                           float max_step,
+                                           int max_iterations_total)
+{
+    if (!isReady())
+    {
+        last_exec_status_ = ExecStatus::NOT_READY;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!jointsAcceptPositionTarget())
+    {
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!model_configured_)
+    {
+        last_exec_status_ = ExecStatus::MODEL_NOT_CONFIGURED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (max_iterations_total <= 0)
+    {
+        last_exec_status_ = ExecStatus::INVALID_INPUT;
+        return false;
+    }
+
+    if (iteration_budget == 0)
+    {
+        // 与导纳增量 IK 保持一致：预算可走配置默认值，并兜底至少 1 步。
+        iteration_budget = admittance_config_.ik_iterations_per_step;
+        if (iteration_budget == 0)
+        {
+            iteration_budget = 1;
+        }
+    }
+
+    // 目标变化则重启增量 IK，从当前反馈角重新起算。
+    bool target_changed = !cartesian_ik_target_valid_;    // 首次调用必定视为目标变化，后续通过数值比较判断。
+    if (!target_changed)
+    {
+        for (uint8_t r = 0; r < 4 && !target_changed; ++r)
+        {
+            for (uint8_t c = 0; c < 4; ++c)
+            {
+                if (std::fabs(T_target.m[r][c] - cartesian_ik_target_pose_.m[r][c]) > 1e-5f)
+                {
+                    target_changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (target_changed)
+    {
+        cartesian_ik_target_pose_ = T_target;
+        cartesian_ik_target_valid_ = true;
+        captureCurrentJointPosition(cartesian_ik_q_work_deg_);
+        cartesian_ik_iter_count_ = 0;
+        cartesian_ik_converged_ = false;
+        cartesian_ik_in_progress_ = true;
+    }
+    else if (!cartesian_ik_in_progress_)
+    {
+        if (cartesian_ik_converged_)
+        {
+            last_exec_status_ = ExecStatus::IDLE;
+            return true;
+        }
+
+        captureCurrentJointPosition(cartesian_ik_q_work_deg_);
+        cartesian_ik_iter_count_ = 0;
+        cartesian_ik_in_progress_ = true;
+    }
+
+    int remaining_iters = max_iterations_total - static_cast<int>(cartesian_ik_iter_count_);
+    if (remaining_iters <= 0)
+    {
+        cartesian_ik_in_progress_ = false;
+        cartesian_ik_converged_ = false;
+        last_exec_status_ = ExecStatus::IK_FAILED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    int iter_this_step = static_cast<int>(iteration_budget);
+    if (iter_this_step > remaining_iters)
+    {
+        iter_this_step = remaining_iters;
+    }
+
+    float q_next[kNumJoints] = {};
+    const bool converged = ikine(cartesian_ik_target_pose_,
+                                 cartesian_ik_q_work_deg_,
+                                 eomg,
+                                 ev,
+                                 q_next,
+                                 lambda,
+                                 max_step,
+                                 iter_this_step);
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        cartesian_ik_q_work_deg_[i] = q_next[i];
+    }
+
+    cartesian_ik_iter_count_ = static_cast<uint16_t>(cartesian_ik_iter_count_ + iter_this_step);
+    setJointTarget(cartesian_ik_q_work_deg_);
+
+    if (converged)
+    {
+        cartesian_ik_in_progress_ = false;
+        cartesian_ik_converged_ = true;
+        last_exec_status_ = ExecStatus::IDLE;
+        return true;
+    }
+
+    if (cartesian_ik_iter_count_ >= static_cast<uint16_t>(max_iterations_total))
+    {
+        cartesian_ik_in_progress_ = false;
+        cartesian_ik_converged_ = false;
+        last_exec_status_ = ExecStatus::IK_FAILED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    cartesian_ik_converged_ = false;
+    last_exec_status_ = ExecStatus::RUNNING;
+    return true;
+}
+
+bool Arm::cartesianIkInProgress() const
+{
+    return cartesian_ik_in_progress_;
+}
+
+bool Arm::cartesianIkConverged() const
+{
+    return cartesian_ik_converged_;
+}
+
+uint16_t Arm::getCartesianIkIterationCount() const
+{
+    return cartesian_ik_iter_count_;
+}
+
 void Arm::setJointTarget(const float q_target[kNumJoints])
 {
     for (uint8_t i = 0; i < kNumJoints; ++i)
@@ -489,6 +658,10 @@ void Arm::setAdmittanceConfig(const AdmittanceConfig &config)
     {
         admittance_config_.wrench_dls_lambda = 1e-4f;
     }
+    if (admittance_config_.ik_iterations_per_step == 0)
+    {
+        admittance_config_.ik_iterations_per_step = 1;
+    }
 
     // 复用 SRML 二阶巴特沃斯低通滤波器处理外力分量。
     admittance_force_lpf_x_.calculateCoefficients(admittance_config_.force_lpf_cutoff_hz,
@@ -507,6 +680,10 @@ void Arm::setAdmittanceConfig(const AdmittanceConfig &config)
         {
             admittance_vel_mps_[i] = 0.0f;
         }
+
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = false;
+        admittance_ik_iter_count_ = 0;
     }
 }
 
@@ -524,6 +701,10 @@ void Arm::setAdmittanceEnabled(bool enable)
         {
             admittance_vel_mps_[i] = 0.0f;
         }
+
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = false;
+        admittance_ik_iter_count_ = 0;
         return;
     }
 
@@ -560,6 +741,13 @@ bool Arm::resetAdmittanceStateFromCurrentPose()
     admittance_force_lpf_x_.reset();
     admittance_force_lpf_y_.reset();
     admittance_force_lpf_z_.reset();
+
+    captureCurrentJointPosition(admittance_ik_q_work_deg_);
+    admittance_ik_target_pose_ = admittance_cmd_pose_;
+    admittance_ik_in_progress_ = false;
+    admittance_ik_converged_ = true;
+    admittance_ik_iter_count_ = 0;
+
     admittance_state_initialized_ = true;
     return true;
 }
@@ -579,6 +767,13 @@ void Arm::setAdmittanceReferencePose(const Math3D::Mat4 &T_ref)
         admittance_force_lpf_x_.reset();
         admittance_force_lpf_y_.reset();
         admittance_force_lpf_z_.reset();
+
+        captureCurrentJointPosition(admittance_ik_q_work_deg_);
+        admittance_ik_target_pose_ = admittance_cmd_pose_;
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = true;
+        admittance_ik_iter_count_ = 0;
+
         admittance_state_initialized_ = true;
     }
 }
@@ -632,6 +827,31 @@ bool Arm::updateAdmittance(float dt_s,
                            float ik_max_step,
                            int ik_max_iterations)
 {
+    // 兼容入口：先跑导纳外环，再以配置步长推进 IK。
+    // 这样即使上层暂未拆任务，也能得到“分步迭代”的执行语义。
+    if (!updateAdmittanceOuter(dt_s))
+    {
+        return false;
+    }
+
+    uint8_t iter_budget = admittance_config_.ik_iterations_per_step;
+    if (iter_budget == 0)
+    {
+        iter_budget = 1;
+    }
+
+    return updateAdmittanceIkStep(iter_budget,
+                                  ik_eomg,
+                                  ik_ev,
+                                  ik_lambda,
+                                  ik_max_step,
+                                  ik_max_iterations);
+}
+
+bool Arm::updateAdmittanceOuter(float dt_s)
+{
+    // 外环只负责把“外力 -> 笛卡尔目标位姿”，不直接做 IK。
+    // 由 IK 任务读取 admittance_ik_target_pose_ 后分批求解。
     if (!admittance_config_.enable)
     {
         last_exec_status_ = ExecStatus::ADMITTANCE_DISABLED;
@@ -665,7 +885,6 @@ bool Arm::updateAdmittance(float dt_s,
         return false;
     }
 
-    // 启用后首次运行自动做状态对齐，避免导纳内部状态未初始化。
     if (!admittance_state_initialized_ && !resetAdmittanceStateFromCurrentPose())
     {
         last_exec_status_ = ExecStatus::INVALID_INPUT;
@@ -673,7 +892,6 @@ bool Arm::updateAdmittance(float dt_s,
         return false;
     }
 
-    // 1) 外力估计（关节净外力矩 -> 末端 wrench）。
     Math3D::Vec6 wrench_raw = {};
     if (!estimateExternalWrenchFromJointTorque(&wrench_raw))
     {
@@ -683,7 +901,6 @@ bool Arm::updateAdmittance(float dt_s,
     }
     external_wrench_raw_ = wrench_raw;
 
-    // 2) 外力滤波：角力矩分量直接透传，线力分量由 SRML 二阶低通处理。
     external_wrench_filtered_.v[0] = external_wrench_raw_.v[0];
     external_wrench_filtered_.v[1] = external_wrench_raw_.v[1];
     external_wrench_filtered_.v[2] = external_wrench_raw_.v[2];
@@ -691,8 +908,6 @@ bool Arm::updateAdmittance(float dt_s,
     external_wrench_filtered_.v[4] = admittance_force_lpf_y_.f(external_wrench_raw_.v[4]);
     external_wrench_filtered_.v[5] = admittance_force_lpf_z_.f(external_wrench_raw_.v[5]);
 
-    // 3) 平移 3 轴导纳积分：死区 + 限幅 + M-D-K 离散更新。
-    // 当前实现使用 wrench 线力分量 [3..5] -> [fx, fy, fz]。
     for (uint8_t axis = 0; axis < 3; ++axis)
     {
         float f = external_wrench_filtered_.v[axis + 3];
@@ -731,21 +946,185 @@ bool Arm::updateAdmittance(float dt_s,
         admittance_cmd_pose_.m[axis][3] = admittance_cmd_pos_m_[axis];
     }
 
-    // 4) 由导纳修正位姿做 IK，得到关节目标并下发。
-    float q0[kNumJoints] = {};
-    captureCurrentJointPosition(q0);
-
-    float q_cmd[kNumJoints] = {};
-    if (!ikine(admittance_cmd_pose_, q0, ik_eomg, ik_ev, q_cmd, ik_lambda, ik_max_step, ik_max_iterations))
+    // 判断本周期导纳目标是否发生变化。
+    // 变化则需要重启 IK 增量求解（从当前关节反馈重新出发）。
+    bool target_changed = false;
+    for (uint8_t r = 0; r < 4 && !target_changed; ++r)
     {
+        for (uint8_t c = 0; c < 4; ++c)
+        {
+            if (std::fabs(admittance_cmd_pose_.m[r][c] - admittance_ik_target_pose_.m[r][c]) > 1e-5f)
+            {
+                target_changed = true;
+                break;
+            }
+        }
+    }
+
+    admittance_ik_target_pose_ = admittance_cmd_pose_;
+
+    // 两种情况触发/重启 IK：
+    // 1) 导纳目标变化；
+    // 2) 上次 IK 未收敛且当前不在求解中（需继续新一轮求解）。
+    if (target_changed || (!admittance_ik_in_progress_ && !admittance_ik_converged_))
+    {
+        captureCurrentJointPosition(admittance_ik_q_work_deg_);
+        admittance_ik_iter_count_ = 0;
+        admittance_ik_converged_ = false;
+        admittance_ik_in_progress_ = true;
+    }
+
+    // 外环返回后，用 RUNNING/IDLE 告知上层 IK 是否仍需推进。
+    last_exec_status_ = admittance_ik_in_progress_ ? ExecStatus::RUNNING : ExecStatus::IDLE;
+    return true;
+}
+
+bool Arm::updateAdmittanceIkStep(uint8_t iteration_budget,
+                                 float ik_eomg,
+                                 float ik_ev,
+                                 float ik_lambda,
+                                 float ik_max_step,
+                                 int ik_max_iterations_total)
+{
+    // IK 内环负责“分批迭代 + 下发中间解”，支持跨周期收敛。
+    if (!admittance_config_.enable)
+    {
+        last_exec_status_ = ExecStatus::ADMITTANCE_DISABLED;
+        return false;
+    }
+
+    if (!isReady())
+    {
+        last_exec_status_ = ExecStatus::NOT_READY;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!jointsAcceptPositionTarget())
+    {
+        last_exec_status_ = ExecStatus::MODE_MISMATCH;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (!model_configured_)
+    {
+        last_exec_status_ = ExecStatus::MODEL_NOT_CONFIGURED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (ik_max_iterations_total <= 0)
+    {
+        last_exec_status_ = ExecStatus::INVALID_INPUT;
+        return false;
+    }
+
+    if (!admittance_state_initialized_ && !resetAdmittanceStateFromCurrentPose())
+    {
+        last_exec_status_ = ExecStatus::INVALID_INPUT;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    if (iteration_budget == 0)
+    {
+        // 预算为 0 时退回配置默认值，并兜底至少 1 步，防止空转。
+        iteration_budget = admittance_config_.ik_iterations_per_step;
+        if (iteration_budget == 0)
+        {
+            iteration_budget = 1;
+        }
+    }
+
+    if (!admittance_ik_in_progress_)
+    {
+        if (admittance_ik_converged_)
+        {
+            // 当前目标已收敛，无需重复求解。
+            last_exec_status_ = ExecStatus::IDLE;
+            return true;
+        }
+
+        // 尚未开始求解：以当前反馈角作为工作初值，开始新一轮增量 IK。
+        captureCurrentJointPosition(admittance_ik_q_work_deg_);
+        admittance_ik_iter_count_ = 0;
+        admittance_ik_in_progress_ = true;
+    }
+
+    int remaining_iters = ik_max_iterations_total - static_cast<int>(admittance_ik_iter_count_);
+    if (remaining_iters <= 0)
+    {
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = false;
         last_exec_status_ = ExecStatus::IK_FAILED;
         holdCurrentAsTarget();
         return false;
     }
 
-    setJointTarget(q_cmd);
-    last_exec_status_ = ExecStatus::IDLE;
+    int iter_this_step = static_cast<int>(iteration_budget);
+    if (iter_this_step > remaining_iters)
+    {
+        // 防止本周期预算超过全局剩余迭代配额。
+        iter_this_step = remaining_iters;
+    }
+
+    float q_next[kNumJoints] = {};
+    const bool converged = ikine(admittance_ik_target_pose_,
+                                 admittance_ik_q_work_deg_,
+                                 ik_eomg,
+                                 ik_ev,
+                                 q_next,
+                                 ik_lambda,
+                                 ik_max_step,
+                                 iter_this_step);
+
+    for (uint8_t i = 0; i < kNumJoints; ++i)
+    {
+        admittance_ik_q_work_deg_[i] = q_next[i];
+    }
+
+    admittance_ik_iter_count_ = static_cast<uint16_t>(admittance_ik_iter_count_ + iter_this_step);
+    // 即使尚未收敛，也下发中间解，保证末端连续逼近目标。
+    setJointTarget(admittance_ik_q_work_deg_);
+
+    if (converged)
+    {
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = true;
+        last_exec_status_ = ExecStatus::IDLE;
+        return true;
+    }
+
+    if (admittance_ik_iter_count_ >= static_cast<uint16_t>(ik_max_iterations_total))
+    {
+        // 达到累计上限仍未收敛：判定失败并进入保护保持。
+        admittance_ik_in_progress_ = false;
+        admittance_ik_converged_ = false;
+        last_exec_status_ = ExecStatus::IK_FAILED;
+        holdCurrentAsTarget();
+        return false;
+    }
+
+    // 还在逼近阶段，等待下周期继续迭代。
+    admittance_ik_converged_ = false;
+    last_exec_status_ = ExecStatus::RUNNING;
     return true;
+}
+
+bool Arm::admittanceIkInProgress() const
+{
+    return admittance_ik_in_progress_;
+}
+
+bool Arm::admittanceIkConverged() const
+{
+    return admittance_ik_converged_;
+}
+
+uint16_t Arm::getAdmittanceIkIterationCount() const
+{
+    return admittance_ik_iter_count_;
 }
 
 bool Arm::getAdmittanceCommandPose(Math3D::Mat4 *T_cmd_out) const

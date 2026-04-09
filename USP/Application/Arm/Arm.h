@@ -66,6 +66,7 @@ public:
         float max_velocity_mps;        /**< 导纳速度限幅（m/s） */
         float max_position_offset_m;   /**< 相对参考位姿的位置偏移限幅（m） */
         float wrench_dls_lambda;       /**< 外力估计 DLS 阻尼系数 */
+        uint8_t ik_iterations_per_step; /**< 增量 IK 每周期迭代步数 */
 
         AdmittanceConfig()
             : enable(false),
@@ -77,7 +78,8 @@ public:
               max_force_n(80.0f),
               max_velocity_mps(0.25f),
               max_position_offset_m(0.08f),
-              wrench_dls_lambda(0.10f)
+              wrench_dls_lambda(0.10f),
+              ik_iterations_per_step(2)
         {
             mass[0] = 1.5f;
             mass[1] = 1.5f;
@@ -223,6 +225,35 @@ public:
                             int max_iterations = 200);
 
     /**
+     * @brief 增量式笛卡尔目标更新：每次执行有限步 IK 并下发中间关节目标。
+     * @note 若目标位姿变化，会自动重启增量 IK 任务。
+     * @param iteration_budget 本次允许的 IK 迭代步数（0 表示使用默认配置并兜底为 1）
+     * @param max_iterations_total 单个目标允许的累计迭代上限
+     */
+    bool updateCartesianTargetIncremental(const Math3D::Mat4 &T_target,
+                                          uint8_t iteration_budget = 0,
+                                          float eomg = 1e-3f,
+                                          float ev = 1e-3f,
+                                          float lambda = 0.05f,
+                                          float max_step = 0.2f,
+                                          int max_iterations_total = 200);
+
+    /**
+     * @brief 笛卡尔增量 IK 是否仍在迭代中。
+     */
+    bool cartesianIkInProgress() const;
+
+    /**
+     * @brief 最近一次笛卡尔增量 IK 目标是否已收敛。
+     */
+    bool cartesianIkConverged() const;
+
+    /**
+     * @brief 当前笛卡尔增量 IK 累计迭代次数。
+     */
+    uint16_t getCartesianIkIterationCount() const;
+
+    /**
      * @brief 下发关节角目标（deg）。
      */
     void setJointTarget(const float q_target[kNumJoints]);
@@ -311,6 +342,38 @@ public:
                           int ik_max_iterations = 80);
 
     /**
+     * @brief 导纳外环更新：完成外力估计、滤波和导纳积分，仅刷新笛卡尔命令位姿。
+     */
+    bool updateAdmittanceOuter(float dt_s);
+
+    /**
+     * @brief 导纳 IK 增量更新：每次执行有限迭代并下发中间关节目标。
+     * @param iteration_budget 本次允许的 IK 迭代步数
+     * @param ik_max_iterations_total 单个目标允许的累计迭代上限
+     */
+    bool updateAdmittanceIkStep(uint8_t iteration_budget,
+                                float ik_eomg = 1e-3f,
+                                float ik_ev = 1e-3f,
+                                float ik_lambda = 0.05f,
+                                float ik_max_step = 0.2f,
+                                int ik_max_iterations_total = 80);
+
+    /**
+     * @brief 导纳 IK 是否仍在迭代中。
+     */
+    bool admittanceIkInProgress() const;
+
+    /**
+     * @brief 上一个导纳 IK 目标是否已收敛。
+     */
+    bool admittanceIkConverged() const;
+
+    /**
+     * @brief 当前导纳 IK 累计迭代次数。
+     */
+    uint16_t getAdmittanceIkIterationCount() const;
+
+    /**
      * @brief 获取当前导纳修正后的目标位姿。
      */
     bool getAdmittanceCommandPose(Math3D::Mat4 *T_cmd_out) const;
@@ -358,10 +421,13 @@ private:
     std::uint32_t trajectory_start_tick_ms_;
     std::uint32_t trajectory_total_ms_;
 
+    // 导纳参数快照（运行时可通过 setAdmittanceConfig 更新）。
     AdmittanceConfig admittance_config_;
+    // 外力估计三轴低通滤波器（对应 fx/fy/fz）。
     LPF_SecondOrder_Classdef admittance_force_lpf_x_;
     LPF_SecondOrder_Classdef admittance_force_lpf_y_;
     LPF_SecondOrder_Classdef admittance_force_lpf_z_;
+    // 导纳内部状态是否已与当前机械臂位姿对齐。
     bool admittance_state_initialized_;
     // 导纳参考位姿（通常来自轨迹/规划器）。
     Math3D::Mat4 admittance_ref_pose_;
@@ -373,6 +439,29 @@ private:
     // 末端外力估计（原始/滤波后）。
     Math3D::Vec6 external_wrench_raw_;
     Math3D::Vec6 external_wrench_filtered_;
+    // 增量 IK 任务是否正在进行。
+    bool admittance_ik_in_progress_;
+    // 最近一次 IK 任务是否已收敛到当前导纳目标位姿。
+    bool admittance_ik_converged_;
+    // 当前 IK 任务累计已执行的迭代次数。
+    uint16_t admittance_ik_iter_count_;
+    // IK 迭代工作变量（关节角，单位 deg），每周期从上次中间解继续。
+    float admittance_ik_q_work_deg_[kNumJoints];
+    // 当前需要跟踪的导纳目标位姿（由外环更新、由 IK 内环消费）。
+    Math3D::Mat4 admittance_ik_target_pose_;
+
+    // 笛卡尔增量 IK 目标是否已初始化。
+    bool cartesian_ik_target_valid_;
+    // 笛卡尔增量 IK 任务是否正在进行。
+    bool cartesian_ik_in_progress_;
+    // 最近一次笛卡尔增量 IK 任务是否收敛。
+    bool cartesian_ik_converged_;
+    // 当前笛卡尔增量 IK 任务累计迭代次数。
+    uint16_t cartesian_ik_iter_count_;
+    // 笛卡尔增量 IK 迭代工作变量（关节角，单位 deg）。
+    float cartesian_ik_q_work_deg_[kNumJoints];
+    // 当前笛卡尔增量 IK 目标位姿。
+    Math3D::Mat4 cartesian_ik_target_pose_;
 
     /**
      * @brief 采集当前关节角。

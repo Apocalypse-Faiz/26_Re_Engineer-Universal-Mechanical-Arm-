@@ -341,7 +341,7 @@
               <MiscControls>-DCONFIG_FREERTOS</MiscControls>
               <Define>USE_HAL_DRIVER,STM32F405xx,ARM_MATH_CM4,__ASM__=__asm</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../USP;../SRML;../USP/Middlewares/Systemview;../Drivers/CMSIS/DSP/Include;../Middlewares/FreeRTOS_port;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../USP/Drivers</IncludePath>
+              <IncludePath>../Core/Inc;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../USP;../SRML;../USP/Middlewares/Systemview;../Drivers/CMSIS/DSP/Include;../Middlewares/FreeRTOS_port;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../USP/Drivers;..\USP\Application\Motor;..\USP\Application\Transmission;..\USP\Application\Joint;..\USP\Application\Arm</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -424,6 +424,106 @@
               <FileName>System_DataPool.cpp</FileName>
               <FileType>8</FileType>
               <FilePath>..\USP\Application\System_DataPool.cpp</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>USP/Application/Arm</GroupName>
+          <Files>
+            <File>
+              <FileName>ActionGroupManager.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Arm\ActionGroupManager.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>ActionGroupManager.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Arm\ActionGroupManager.h</FilePath>
+            </File>
+            <File>
+              <FileName>Arm.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Arm\Arm.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Arm.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Arm\Arm.h</FilePath>
+            </File>
+            <File>
+              <FileName>Math3D.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Arm\Math3D.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Math3D.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Arm\Math3D.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>USP/Application/Joint</GroupName>
+          <Files>
+            <File>
+              <FileName>Joint.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Joint\Joint.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Joint.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Joint\Joint.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>USP/Application/Transmission</GroupName>
+          <Files>
+            <File>
+              <FileName>Transmission.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Transmission\Transmission.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Transmission.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Transmission\Transmission.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>USP/Application/Motor</GroupName>
+          <Files>
+            <File>
+              <FileName>DJI_motor.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Motor\DJI_motor.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>DJI_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Motor\DJI_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>DM_motor.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Motor\DM_motor.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>DM_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Motor\DM_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>Motor.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\USP\Application\Motor\Motor.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\USP\Application\Motor\Motor.h</FilePath>
             </File>
           </Files>
         </Group>
