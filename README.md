@@ -148,14 +148,14 @@ $$
 
 $$
 J_{s,1}=S_1,\qquad
-J_{s,i}=\operatorname{Ad}_{e^{[S_1]q_1}\cdots e^{[S_{i-1}]q_{i-1}}}S_i,
+J_{s,i}=\mathrm{Ad}_{e^{[S_1]q_1}\cdots e^{[S_{i-1}]q_{i-1}}}S_i,
 \qquad V_s=J_s\dot q.
 $$
 
 对于 $T=[R,p;0,1]$，伴随矩阵为：
 
 $$
-\operatorname{Ad}_T=\begin{bmatrix}R&0\\[p]_\times R&R\end{bmatrix}.
+\mathrm{Ad}_T=\begin{bmatrix}R&0\\{[p]}_\times R&R\end{bmatrix}.
 $$
 
 分别对应 `cal_Jacobian()` 和 `adjoint()`。这里返回的是**空间 twist 雅可比**，不是简单堆叠末端角速度和末端原点速度的几何雅可比：
@@ -172,8 +172,8 @@ $$
 当前位姿为 $T(q)$、目标为 $T_d$，先在末端系求误差，再变换到空间系：
 
 $$
-V_b=\operatorname{vee}\{\log(T(q)^{-1}T_d)\},\qquad
-V_s=\operatorname{Ad}_{T(q)}V_b.
+V_b=\mathrm{vee}\{\log(T(q)^{-1}T_d)\},\qquad
+V_s=\mathrm{Ad}_{T(q)}V_b.
 $$
 
 在当前姿态附近使用 $J_s\Delta q\approx V_s$，求解正则化目标：
@@ -188,7 +188,7 @@ $$
 \Delta q=J_s^T(J_sJ_s^T+\lambda^2I)^{-1}V_s.
 $$
 
-源码先用带主元选择的 `solveLinear6x6()` 解线性方程，再乘 $J_s^T$，并未显式计算矩阵逆。对整体步长作 $\lVert\Delta q\rVert\leq\texttt{max_step}$ 限幅后更新 $q$。默认 `lambda=0.05`、`max_step=0.2`，后者为内部弧度增量向量的范数上限。
+源码先用带主元选择的 `solveLinear6x6()` 解线性方程，再乘 $J_s^T$，并未显式计算矩阵逆。对整体步长作 $\lVert\Delta q\rVert\leq\texttt{max\_step}$ 限幅后更新 $q$。默认 `lambda=0.05`、`max_step=0.2`，后者为内部弧度增量向量的范数上限。
 
 `eomg` 与 `ev` 分别检查空间误差向量的角分量和线分量；其线分量不应直接等同于原始 TCP 欧氏位置误差。当前求解没有旋转/平移量纲加权，也没有把关节软限位或碰撞约束加入优化问题，阻尼和容差需结合模型尺度选择。
 
@@ -321,7 +321,7 @@ $$
 | 模型量 | 关节接口 | 应用层提供的内容 |
 |---|---|---|
 | 保持重力力矩 | `setGravityComp()` | 根据质量、质心和姿态计算 $g(q)$ |
-| 摩擦补偿 | `setFrictionComp()` | 例如 $F_c\operatorname{sgn}(\dot q)+B\dot q$ |
+| 摩擦补偿 | `setFrictionComp()` | 例如 $F_c\mathrm{sgn}(\dot q)+B\dot q$ |
 | 惯性项 | `setInertiaComp()` | 简化 $I_{\mathrm{eq}}\ddot q_d$ 或自定义模型项 |
 | 其他前馈 | `setTargetTorqueFF()` | 未在上面重复加入的期望力矩 |
 
@@ -341,7 +341,7 @@ P=F_s^TV_s=F_s^TJ_s\dot q=\tau_q^T\dot q
 \quad\Rightarrow\quad\tau_q=J_s^TF_s.
 $$
 
-这里 $F_s$ 的力矩部分取空间原点为参考点。若原先是末端坐标系 wrench，需先做对偶变换 $F_s=\operatorname{Ad}_{T^{-1}}^TF_b$，不能只旋转力向量而忽略力矩平移项。虚功推导见 [Modern Robotics 5.2](https://modernrobotics.northwestern.edu/nu-gm-book-resource/5-2-statics-of-open-chains/)。
+这里 $F_s$ 的力矩部分取空间原点为参考点。若原先是末端坐标系 wrench，需先做对偶变换 $F_s=\mathrm{Ad}_{T^{-1}}^TF_b$，不能只旋转力向量而忽略力矩平移项。虚功推导见 [Modern Robotics 5.2](https://modernrobotics.northwestern.edu/nu-gm-book-resource/5-2-statics-of-open-chains/)。
 
 ### 6.2 残差估计与 DLS 反解
 
@@ -378,9 +378,9 @@ $$
 $$
 \begin{aligned}
 a_k&=(f_k-D_av_k-K_a(x_k-x_{r,k}))/M_a,\\
-v_{k+1}&=\operatorname{clip}(v_k+a_k\Delta t,\pm v_{\max}),\\
+v_{k+1}&=\mathrm{clip}(v_k+a_k\Delta t,\pm v_{\max}),\\
 x_{k+1}&=x_k+v_{k+1}\Delta t,\\
-x_{k+1}-x_{r,k}&\leftarrow\operatorname{clip}(x_{k+1}-x_{r,k},\pm\Delta x_{\max}).
+x_{k+1}-x_{r,k}&\leftarrow\mathrm{clip}(x_{k+1}-x_{r,k},\pm\Delta x_{\max}).
 \end{aligned}
 $$
 
