@@ -47,3 +47,6 @@ RTE
 
 .vscode/
 *.idea
+
+# Private laboratory library; keep local copies out of the public repository.
+/SRML/
